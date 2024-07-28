@@ -6,6 +6,8 @@
 
 /// A module that provieds tools for heandling Ip and Mac addresses as well as tools to define
 /// networks
+#[warn(dead_code)]
+#[warn(unused)]
 pub mod address;
 
 
