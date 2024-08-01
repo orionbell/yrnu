@@ -4,11 +4,75 @@
 
 use core::fmt;
 use std::{
-    env::remove_var, fmt::{Display, Formatter}, net::{IpAddr, Ipv4Addr, Ipv6Addr}, str::FromStr
+    fmt::{Display, Formatter}, net::{IpAddr, Ipv4Addr, Ipv6Addr}, str::FromStr
 };
+
+
+
+/// # MacAddress
+/// `MacAddress` is a struct that present a MAC address
+#[derive(Debug,Clone,PartialEq)]
+pub struct MacAddress {
+    address: String
+}
+
+impl MacAddress {
+    // private function for getting the parts of the `mac address`
+    fn get_parts(address: &str) -> Vec<String> {
+        address.split(':').map(str::to_string).collect()
+    }
+    /// returns the `mac address` as a vector
+    pub fn as_vector(&self) -> Vec<String> {
+        MacAddress::get_parts(self.address.as_str())
+    }
+    /// Checks if a giving `mac address` is valid
+    pub fn is_valid(address: &str) -> bool {
+        let parts = MacAddress::get_parts(address);
+        if parts.len() != 6 {
+            return false;
+        }
+        for part in parts {
+            if part.len() != 2 || i64::from_str_radix(part.as_str(), 16).is_err() {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn new(address: &str) -> Option<MacAddress> {
+        if MacAddress::is_valid(address) {
+            return Some(MacAddress {
+                address: address.to_uppercase().to_string()
+            });
+        }
+        None
+    }
+}
+
+impl PartialOrd for MacAddress {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        let self_vec = self.as_vector();
+        let other_vec = other.as_vector();
+        let mut self_hex;
+        let mut other_hex;
+        let mut index = 5;
+        loop {
+            self_hex = self_vec.get(index).unwrap();
+            other_hex = other_vec.get(index).unwrap();
+            if i64::from_str_radix(self_hex, 16) != i64::from_str_radix(other_hex, 16) {
+                return Some(i64::from_str_radix(self_hex, 16).unwrap().cmp(&i64::from_str_radix(other_hex, 16).unwrap()));
+            }
+            if index == 0 {
+                return Some(std::cmp::Ordering::Equal);
+            }
+            index -= 1;
+        }
+    }
+}
 
 /// # IpVersion
 /// `IpVersion` is an enum that present the two versions of Internet Protocol (IP) versions.
+#[derive(Debug,Clone,PartialEq)]
 pub enum IpVersion {
     V4,
     V6,
@@ -16,6 +80,7 @@ pub enum IpVersion {
 
 /// # IpKind
 /// `IpKind` is an enum that present the diffrent kinds of Internet Protocols (IP) addresses.
+#[derive(Debug,Clone,PartialEq)]
 pub enum IpKind {
     Public,
     Private,
@@ -32,6 +97,7 @@ pub enum IpKind {
 
 /// # IpAddress
 /// `IpAddress` is a struct that present an Internet Protocol (IP) address
+#[derive(Debug,Clone,PartialEq)]
 pub struct IpAddress {
     address: String,
     version: IpVersion,
@@ -40,6 +106,7 @@ pub struct IpAddress {
 
 /// # Mask
 /// `Mask` is a struct that present a CIDR subnet mask
+#[derive(Debug,Clone,PartialEq)]
 pub struct Mask {
     mask: String,
     prefix: u8,
@@ -48,6 +115,7 @@ pub struct Mask {
 
 /// # Network
 /// `Network` is a struct that present computer network
+#[derive(Debug,Clone, PartialEq)]
 pub struct Network {
     id: IpAddress,
     mask: Mask,
@@ -67,13 +135,6 @@ impl IpVersion {
         match IpAddr::from_str(address) {
             Ok(addr) => IpAddr::is_ipv6(&addr),
             Err(..) => false,
-        }
-    }
-
-    pub fn clone(&self) -> Self {
-        match self {
-            IpVersion::V4 => IpVersion::V4,
-            IpVersion::V6 => IpVersion::V6,
         }
     }
 }
@@ -300,22 +361,6 @@ impl IpKind {
         }
         None
     }
-
-    pub fn clone(&self) -> Self {
-        match self {
-            IpKind::Private => IpKind::Private,
-            IpKind::Public => IpKind::Public,
-            IpKind::Loopback => IpKind::Loopback,
-            IpKind::Apipa => IpKind::Apipa,
-            IpKind::Broadcast => IpKind::Broadcast,
-            IpKind::Linklocal => IpKind::Linklocal,
-            IpKind::Uniqelocal => IpKind::Uniqelocal,
-            IpKind::Uniqeglobal => IpKind::Uniqeglobal,
-            IpKind::Multicast => IpKind::Multicast,
-            IpKind::Unspecified => IpKind::Unspecified,
-            IpKind::Netid => IpKind::Netid,
-        }
-    }
 }
 
 impl Display for IpKind {
@@ -397,14 +442,6 @@ impl IpAddress {
     /// a getter function for the kind propertie
     pub fn kind(&self) -> IpKind {
         self.kind.clone()
-    }
-    /// Creates a clone from an existing instance
-    pub fn clone(&self) -> IpAddress {
-        IpAddress {
-            address: self.address.clone(),
-            version: self.version.clone(),
-            kind: self.kind.clone(),
-        }
     }
 }
 
@@ -568,7 +605,7 @@ impl Network {
         }
     }
     /// Checks if a giving Ip address is in the self network
-    pub fn containes(&self, address: IpAddress) -> bool {
+    pub fn containes(&self, address: &IpAddress) -> bool {
         if IpVersion::is_v4(address.address().as_str()) {
             let octats = address.get_octats().unwrap();
             let netid_octs = self.id.get_octats().unwrap();

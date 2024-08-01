@@ -1,4 +1,4 @@
-use yrnu::address::{self, IpAddress, IpKind, Mask, Network};
+use yrnu::address::{self, IpAddress, IpKind, MacAddress, Mask, Network};
 
 // IpVersion tests
 #[test]
@@ -36,6 +36,11 @@ fn new_ipaddress_test() {
     assert_eq!(addr2.to_string(),"fc00::1 is a version 6 uniqe local ip address");
 }
 
+//#[test]
+//fn ipaddress_cmp_test() {
+    
+//}
+
 // Mask tests
 #[test]
 fn is_valid_test() {
@@ -72,14 +77,39 @@ fn new_network_test() {
     assert_eq!("10.31.255.255",super_big_net.broadcast().address())
 }
 
-//#[test]
-//fn containes_test() {
+#[test]
+fn containes_test() {
+    let net1 = Network::from_str("192.168.15.128/28").unwrap();
+    let net2 = Network::from_str("10.1.12.0/24").unwrap();
+    let addr = IpAddress::new("10.1.12.2").unwrap();
+    assert_eq!(net1.containes(&addr), false);
+    assert_eq!(net2.containes(&addr), true);
+}
 
-//}
+#[test]
+fn new_mac_test() {
+    let mac1 = MacAddress::new("AC:12:00:1f:ff:22");
+    let mac2 = MacAddress::new("AC:R2:00:1f:ff:22");
+    let mac3 = MacAddress::new("AC:12:00:1f:ff");
+    let mac4 = MacAddress::new("AC12:00:1f:ff:22");
+    assert_eq!(mac1.is_none(),false);
+    assert_eq!(mac2.is_none(),true);
+    assert_eq!(mac3.is_none(),true);
+    assert_eq!(mac4.is_none(),true);
+    println!("{:?}",mac1.unwrap().as_vector());
+}
 
-
-
-
+#[test]
+fn mac_cmp_test() {
+    let mac1 = MacAddress::new("AB:CD:EF:12:34:56").unwrap();
+    let mac2 = MacAddress::new("AB:CD:EF:12:34:56").unwrap(); 
+    let mac3 = MacAddress::new("AB:CD:EF:22:34:56").unwrap();
+    assert_eq!(mac1 == mac2, true);
+    assert_eq!(mac1 == mac3, false);
+    assert_eq!(mac1 > mac3, false);
+    assert_eq!(mac1 >= mac1, true);
+    assert_eq!(mac2 <= mac3, true);
+}
 
 
 
