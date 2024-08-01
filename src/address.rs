@@ -4,16 +4,16 @@
 
 use core::fmt;
 use std::{
-    fmt::{Display, Formatter}, net::{IpAddr, Ipv4Addr, Ipv6Addr}, str::FromStr
+    fmt::{Display, Formatter},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    str::FromStr,
 };
-
-
 
 /// # MacAddress
 /// `MacAddress` is a struct that present a MAC address
-#[derive(Debug,Clone,PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MacAddress {
-    address: String
+    address: String,
 }
 
 impl MacAddress {
@@ -42,7 +42,7 @@ impl MacAddress {
     pub fn new(address: &str) -> Option<MacAddress> {
         if MacAddress::is_valid(address) {
             return Some(MacAddress {
-                address: address.to_uppercase().to_string()
+                address: address.to_uppercase().to_string(),
             });
         }
         None
@@ -60,7 +60,11 @@ impl PartialOrd for MacAddress {
             self_hex = self_vec.get(index).unwrap();
             other_hex = other_vec.get(index).unwrap();
             if i64::from_str_radix(self_hex, 16) != i64::from_str_radix(other_hex, 16) {
-                return Some(i64::from_str_radix(self_hex, 16).unwrap().cmp(&i64::from_str_radix(other_hex, 16).unwrap()));
+                return Some(
+                    i64::from_str_radix(self_hex, 16)
+                        .unwrap()
+                        .cmp(&i64::from_str_radix(other_hex, 16).unwrap()),
+                );
             }
             if index == 0 {
                 return Some(std::cmp::Ordering::Equal);
@@ -72,7 +76,7 @@ impl PartialOrd for MacAddress {
 
 /// # IpVersion
 /// `IpVersion` is an enum that present the two versions of Internet Protocol (IP) versions.
-#[derive(Debug,Clone,PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum IpVersion {
     V4,
     V6,
@@ -80,7 +84,7 @@ pub enum IpVersion {
 
 /// # IpKind
 /// `IpKind` is an enum that present the diffrent kinds of Internet Protocols (IP) addresses.
-#[derive(Debug,Clone,PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum IpKind {
     Public,
     Private,
@@ -97,7 +101,7 @@ pub enum IpKind {
 
 /// # IpAddress
 /// `IpAddress` is a struct that present an Internet Protocol (IP) address
-#[derive(Debug,Clone,PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct IpAddress {
     address: String,
     version: IpVersion,
@@ -106,7 +110,7 @@ pub struct IpAddress {
 
 /// # Mask
 /// `Mask` is a struct that present a CIDR subnet mask
-#[derive(Debug,Clone,PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Mask {
     mask: String,
     prefix: u8,
@@ -115,7 +119,7 @@ pub struct Mask {
 
 /// # Network
 /// `Network` is a struct that present computer network
-#[derive(Debug,Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Network {
     id: IpAddress,
     mask: Mask,
@@ -344,7 +348,7 @@ impl IpKind {
                     255
                 );
             } else {
-                let preportion = ((max_hosts + 2) as u64) / Mask::MAX_CLASS_A_ADDR; 
+                let preportion = ((max_hosts + 2) as u64) / Mask::MAX_CLASS_A_ADDR;
                 addr = format!(
                     "{}.{}.{}.{}",
                     octats[0] as u64 + preportion - 1,
@@ -593,7 +597,7 @@ impl Network {
             if IpKind::is_netid(networks_items[0], &mask) {
                 let netid = IpAddress::new(networks_items[0])?;
                 return Some(Network {
-                    id: netid.clone(),                     
+                    id: netid.clone(),
                     broadcast: IpKind::get_broadcast(netid.address().as_str(), &mask)?,
                     mask,
                 });
