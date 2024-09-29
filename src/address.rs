@@ -1,21 +1,20 @@
 //! # address.rs
 //! The `address` module provides general purpese tools for heandling and managing Ip and Mac
 //! addresses as well as defining networks.
-
+use crate::errors::addrerr::*;
 use core::fmt;
 use std::{
+    error::Error,
     fmt::{Display, Formatter},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     str::FromStr,
 };
-
-/// # MacAddress
+/// ## MacAddress
 /// `MacAddress` is a struct that present a MAC address
 #[derive(Debug, Clone, PartialEq)]
 pub struct MacAddress {
     address: String,
 }
-
 impl MacAddress {
     // private function for getting the parts of the `mac address`
     fn get_parts(address: &str) -> Vec<String> {
@@ -39,16 +38,20 @@ impl MacAddress {
         true
     }
 
-    pub fn new(address: &str) -> Option<MacAddress> {
+    pub fn new(address: &str) -> Result<MacAddress, Box<dyn Error>> {
         if MacAddress::is_valid(address) {
-            return Some(MacAddress {
+            return Ok(MacAddress {
                 address: address.to_uppercase().to_string(),
             });
         }
-        None
+        Err(Box::new(InvalidMacAddress))
     }
 }
-
+impl Display for MacAddress {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", self.address)
+    }
+}
 impl PartialOrd for MacAddress {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         let self_vec = self.as_vector();
@@ -291,32 +294,32 @@ impl IpKind {
         }
     }
     /// Returns the kind of a giving address
-    pub fn get_kind(address: &str) -> Option<IpKind> {
+    pub fn get_kind(address: &str) -> Result<IpKind, Box<dyn Error>> {
         if IpKind::is_private(address) {
             if IpVersion::is_v4(address) {
-                return Some(IpKind::Private);
+                return Ok(IpKind::Private);
             }
-            Some(IpKind::Uniqelocal)
+            Ok(IpKind::Uniqelocal)
         } else if IpKind::is_loopback(address) {
-            Some(IpKind::Loopback)
+            Ok(IpKind::Loopback)
         } else if IpKind::is_multicast(address) {
-            Some(IpKind::Multicast)
+            Ok(IpKind::Multicast)
         } else if IpKind::is_apipa(address) {
-            Some(IpKind::Apipa)
+            Ok(IpKind::Apipa)
         } else if IpKind::is_linklocal(address) {
-            Some(IpKind::Linklocal)
+            Ok(IpKind::Linklocal)
         } else if IpKind::is_unspecified(address) {
-            Some(IpKind::Unspecified)
+            Ok(IpKind::Unspecified)
         } else if IpVersion::is_v4(address) {
-            Some(IpKind::Public)
+            Ok(IpKind::Public)
         } else if IpVersion::is_v6(address) {
-            Some(IpKind::Uniqeglobal)
+            Ok(IpKind::Uniqeglobal)
         } else {
-            None
+            Err(Box::new(InvalidIpAddress))
         }
     }
 
-    pub fn get_broadcast(netid: &str, mask: &Mask) -> Option<IpAddress> {
+    pub fn get_broadcast(netid: &str, mask: &Mask) -> Result<IpAddress, Box<dyn Error>> {
         if IpKind::is_netid(netid, mask) {
             let max_hosts = mask.num_of_hosts();
             let octats = IpAddress::get_octats_from_str(netid).unwrap();
@@ -357,13 +360,13 @@ impl IpKind {
                     255
                 );
             }
-            return Some(IpAddress {
+            return Ok(IpAddress {
                 address: addr,
                 version: IpVersion::V4,
                 kind: IpKind::Broadcast,
             });
         }
-        None
+        Err(Box::new(InvalidIpAddress))
     }
 }
 
@@ -398,9 +401,9 @@ impl IpAddress {
         }
     }
     /// creates a new IpAddress instance
-    pub fn new(address: &str) -> Option<IpAddress> {
+    pub fn new(address: &str) -> Result<IpAddress, Box<dyn Error>> {
         if IpAddress::is_valid(address) {
-            return Some(IpAddress {
+            return Ok(IpAddress {
                 address: address.to_string(),
                 version: if IpVersion::is_v4(address) {
                     IpVersion::V4
@@ -410,13 +413,39 @@ impl IpAddress {
                 kind: IpKind::get_kind(address)?,
             });
         } else {
-            None
+            Err(Box::new(InvalidIpAddress))
+        }
+    }
+    /// creates a new IpAddress instance from IpAddr
+    pub fn from(address: &IpAddr) -> IpAddress {
+        match address {
+            IpAddr::V4(ipv4) => {
+                let oct = ipv4.octets();
+                let address = format!("{}.{}.{}.{}", oct[0], oct[1], oct[2], oct[3]);
+                IpAddress {
+                    version: IpVersion::V4,
+                    kind: IpKind::get_kind(address.as_str()).unwrap(),
+                    address,
+                }
+            }
+            IpAddr::V6(ipv6) => {
+                let segm = ipv6.segments();
+                let address = format!(
+                    "{:X}:{:X}:{:X}:{:X}:{:X}:{:X}:{:X}:{:X}",
+                    segm[0], segm[1], segm[2], segm[3], segm[4], segm[5], segm[6], segm[7],
+                );
+                IpAddress {
+                    version: IpVersion::V6,
+                    kind: IpKind::get_kind(address.as_str()).unwrap(),
+                    address,
+                }
+            }
         }
     }
     /// get the octats values of an Ipv4 address as u8 vector from giving &str
-    pub fn get_octats_from_str(address: &str) -> Option<Vec<u8>> {
+    pub fn get_octats_from_str(address: &str) -> Result<Vec<u8>, Box<dyn Error>> {
         if !IpVersion::is_v4(address) {
-            return None;
+            return Err(Box::new(InvalidIpV4Address));
         }
         let octats: Vec<u8> = address
             .split('.')
@@ -425,14 +454,14 @@ impl IpAddress {
             .map(|oct| oct.parse::<u8>())
             .collect::<Result<Vec<u8>, _>>()
             .unwrap_or(vec![]);
-        Some(octats)
+        Ok(octats)
     }
     /// get the octats values of an ipv4 IpAddress instance
-    pub fn get_octats(&self) -> Option<Vec<u8>> {
+    pub fn get_octats(&self) -> Result<Vec<u8>, Box<dyn Error>> {
         if IpVersion::is_v4(self.address().as_str()) {
             return IpAddress::get_octats_from_str(self.address().as_str());
         }
-        None
+        Err(Box::new(InvalidIpV4Address))
     }
     // getters for the IpAddress properties
     /// a getter function for the version propertie
@@ -446,6 +475,24 @@ impl IpAddress {
     /// a getter function for the kind propertie
     pub fn kind(&self) -> IpKind {
         self.kind.clone()
+    }
+    /// implementation of the EUI-64 algorithem
+    pub fn eui64(mac: &MacAddress) -> IpAddress {
+        let parts = mac.as_vector();
+        let address = format!(
+            "FE80::{:X?}{}:{}FF:FE{}:{}{}",
+            (i64::from_str_radix(parts[0].as_str(), 16).unwrap_or(0) as u8) ^ 0b0000_0010,
+            parts[1],
+            parts[2],
+            parts[3],
+            parts[4],
+            parts[5]
+        );
+        IpAddress {
+            version: IpVersion::V6,
+            kind: IpKind::Linklocal,
+            address,
+        }
     }
 }
 
@@ -480,7 +527,7 @@ impl Mask {
         u32::MAX << 32 - ones_count == mask_value as u32
     }
     /// returns the prefix of a giving address
-    pub fn get_prefix(mask: &str) -> Option<u8> {
+    pub fn get_prefix(mask: &str) -> Result<u8, Box<dyn Error>> {
         if Mask::is_valid(mask) {
             let octats: Vec<&str> = mask.split('.').collect();
             let octats_values: Vec<u8> = octats
@@ -492,26 +539,26 @@ impl Mask {
                 | (octats_values[1] as u32) << 16
                 | (octats_values[2] as u32) << 8
                 | octats_values[3] as u32;
-            return Some(mask_value.leading_ones() as u8);
+            return Ok(mask_value.leading_ones() as u8);
         }
-        None
+        Err(Box::new(InvalidMask))
     }
     /// creates a new Mask instance
-    pub fn new(mask: &str) -> Option<Mask> {
+    pub fn new(mask: &str) -> Result<Mask, Box<dyn Error>> {
         let prefix = Mask::get_prefix(mask).unwrap();
         if Mask::is_valid(mask) {
-            return Some(Mask {
+            return Ok(Mask {
                 mask: mask.to_string(),
                 prefix,
                 num_of_hosts: (prefix as u32 - 2),
             });
         }
-        None
+        Err(Box::new(InvalidMask))
     }
     /// creates new Mask instance from giving prefix
-    pub fn from_prefix(prefix: u8) -> Option<Mask> {
+    pub fn from_prefix(prefix: u8) -> Result<Mask, Box<dyn Error>> {
         if prefix > 32 {
-            return None;
+            return Err(Box::new(InvalidPrefix));
         }
         let full_bytes: u32 = u32::MAX;
         let mask_bytes = full_bytes >> 32 - prefix;
@@ -520,7 +567,7 @@ impl Mask {
         octats.push(mask_bytes.to_ne_bytes()[1]);
         octats.push(mask_bytes.to_ne_bytes()[2]);
         octats.push(mask_bytes.to_ne_bytes()[3]);
-        Some(Mask {
+        Ok(Mask {
             mask: format!(
                 "{}.{}.{}.{}",
                 octats[0],
@@ -558,12 +605,12 @@ impl Display for Mask {
 
 impl Network {
     /// Creates a new ipv4 Network instance from giving net id and subnet mask
-    pub fn new(id: IpAddress, mask: Mask) -> Option<Network> {
+    pub fn new(id: IpAddress, mask: Mask) -> Result<Network, Box<dyn Error>> {
         if IpKind::is_netid(id.address().as_str(), &mask) {
             let octats = IpAddress::get_octats(&id).unwrap();
             let hosts = mask.num_of_hosts() + 1;
             if IpVersion::is_v4(&id.address().as_str()) {
-                return Some(Network {
+                return Ok(Network {
                     id,
                     mask,
                     broadcast: IpAddress::new(
@@ -580,32 +627,32 @@ impl Network {
                 });
             }
         }
-        None
+        Err(Box::new(InvalidNetwork))
     }
     /// Creates a new network from string slice in the "netid/prefix" format
-    pub fn from_str(net: &str) -> Option<Network> {
+    pub fn from_str(net: &str) -> Result<Network, Box<dyn Error>> {
         let networks_items = net.split('/').collect::<Vec<&str>>();
         if networks_items.len() != 2 {
-            return None;
+            return Err(Box::new(InvalidNetwork));
         }
         let prefix = networks_items[1].parse::<u8>().unwrap_or(0);
         if prefix == 0 {
-            return None;
+            return Err(Box::new(InvalidNetwork));
         }
         let mask = Mask::from_prefix(prefix);
-        if let Some(mask) = mask {
+        if let Ok(mask) = mask {
             if IpKind::is_netid(networks_items[0], &mask) {
                 let netid = IpAddress::new(networks_items[0])?;
-                return Some(Network {
+                return Ok(Network {
                     id: netid.clone(),
                     broadcast: IpKind::get_broadcast(netid.address().as_str(), &mask)?,
                     mask,
                 });
             } else {
-                return None;
+                return Err(Box::new(InvalidNetwork));
             }
         } else {
-            None
+            return Err(Box::new(InvalidNetwork));
         }
     }
     /// Checks if a giving Ip address is in the self network

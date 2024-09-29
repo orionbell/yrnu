@@ -92,10 +92,10 @@ fn new_mac_test() {
     let mac2 = MacAddress::new("AC:R2:00:1f:ff:22");
     let mac3 = MacAddress::new("AC:12:00:1f:ff");
     let mac4 = MacAddress::new("AC12:00:1f:ff:22");
-    assert_eq!(mac1.is_none(),false);
-    assert_eq!(mac2.is_none(),true);
-    assert_eq!(mac3.is_none(),true);
-    assert_eq!(mac4.is_none(),true);
+    assert_eq!(mac1.is_err(),false);
+    assert_eq!(mac2.is_err(),true);
+    assert_eq!(mac3.is_err(),true);
+    assert_eq!(mac4.is_err(),true);
     println!("{:?}",mac1.unwrap().as_vector());
 }
 
@@ -111,6 +111,16 @@ fn mac_cmp_test() {
     assert_eq!(mac2 <= mac3, true);
 }
 
+#[test]
+fn eui64_test() {
+    let mac1 = MacAddress::new("aa:bb:cc:ee:ff:11").unwrap();
+    let mac2 = MacAddress::new("11:22:33:44:55:66").unwrap();
+    let mac3 = MacAddress::new("12:34:56:78:9a:cd").unwrap();
+
+    assert_eq!(IpAddress::eui64(&mac1).address(),"FE80::A8BB:CCFF:FEEE:FF11");
+    assert_eq!(IpAddress::eui64(&mac2).address(),"FE80::1322:33FF:FE44:5566");
+    assert_eq!(IpAddress::eui64(&mac3).address(),"FE80::1034:56FF:FE78:9ACD");
+}
 
 
 
