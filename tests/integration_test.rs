@@ -1,2 +1,1 @@
-use yrnu::address;
-mod address_tests;
+mod core_tests;

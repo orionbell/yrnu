@@ -7,7 +7,7 @@
 /// A module that provieds tools for heandling Ip and Mac addresses as well as tools to define
 /// networks
 #[warn(unused)]
-pub mod address;
+pub mod core;
 pub mod port;
 pub mod errors;
 // internal testing

@@ -4,6 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-libc = "0.2.155"
-network-interface = "2.0.0"
+pnet = "0.35.0"
 

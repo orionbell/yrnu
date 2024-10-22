@@ -2,13 +2,16 @@
 //! The `address` module provides general purpese tools for heandling and managing Ip and Mac
 //! addresses as well as defining networks.
 use crate::errors::addrerr::*;
+use crate::errors::iferr::*;
 use core::fmt;
+use pnet::{datalink::interfaces, ipnetwork::IpNetwork};
 use std::{
     error::Error,
     fmt::{Display, Formatter},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     str::FromStr,
 };
+
 /// ## MacAddress
 /// `MacAddress` is a struct that present a MAC address
 #[derive(Debug, Clone, PartialEq)]
@@ -45,6 +48,9 @@ impl MacAddress {
             });
         }
         Err(Box::new(InvalidMacAddress))
+    }
+    pub fn address(&self) -> String {
+        self.address.clone()
     }
 }
 impl Display for MacAddress {
@@ -692,5 +698,135 @@ impl Network {
 impl Display for Network {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{}/{}", self.netid().address(), self.mask().prefix())
+    }
+}
+
+pub struct Interface {
+    name: String,
+    index: u32,
+    description: String,
+    mac: Option<MacAddress>,
+    ipv4: Option<IpAddress>,
+    ipv6: Option<IpAddress>,
+    mask: Option<Mask>,
+}
+
+impl Interface {
+    pub fn get_by_index(index: u32) -> Result<Interface, Box<dyn Error>> {
+        let mut mac: Option<MacAddress> = None;
+        let mut ipv4: Option<IpAddress> = None;
+        let mut ipv6: Option<IpAddress> = None;
+        let mut mask: Option<Mask> = None;
+        for inf in interfaces() {
+            if inf.index == index {
+                if inf.ips.len() > 0 {
+                    if let IpNetwork::V4(addr) = inf.ips[0] {
+                        ipv4 = Some(IpAddress::from(&IpAddr::V4(addr.ip())));
+                        if let Ok(submask) = Mask::from_prefix(addr.prefix()) {
+                            mask = Some(submask);
+                        }
+                    }
+                }
+                if inf.ips.len() > 1 {
+                    if let IpNetwork::V6(addr) = inf.ips[1] {
+                        ipv6 = Some(IpAddress::from(&IpAddr::V6(addr.ip())))
+                    }
+                }
+                if let Some(mac_addr) = inf.mac {
+                    let mac_addr = mac_addr.octets();
+                    match MacAddress::new(
+                        format!(
+                            "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+                            mac_addr[0],
+                            mac_addr[1],
+                            mac_addr[2],
+                            mac_addr[3],
+                            mac_addr[4],
+                            mac_addr[5]
+                        )
+                        .as_str(),
+                    ) {
+                        Ok(addr) => {
+                            mac = Some(addr);
+                        }
+                        Err(_) => {
+                            mac = None;
+                        }
+                    }
+                }
+                return Ok(Interface {
+                    name: inf.name.to_string(),
+                    index,
+                    description: inf.description,
+                    mac,
+                    ipv4,
+                    ipv6,
+                    mask,
+                });
+            }
+        }
+        Err(Box::new(InterfaceNotExists))
+    }
+    pub fn get_by_name(name: &str) -> Result<Interface, Box<dyn Error>> {
+        for inf in interfaces() {
+            if inf.name == name {
+                return Self::get_by_index(inf.index);
+            }
+        }
+        Err(Box::new(InterfaceNotExists))
+    }
+    pub fn name(self) -> String {
+        self.name
+    }
+    pub fn index(self) -> u32 {
+        self.index
+    }
+    pub fn description(self) -> String {
+        self.description
+    }
+    pub fn mac(self) -> Option<MacAddress> {
+        self.mac
+    }
+    pub fn ipv4(self) -> Option<IpAddress> {
+        self.ipv4
+    }
+    pub fn ipv6(self) -> Option<IpAddress> {
+        self.ipv6
+    }
+    pub fn mask(self) -> Option<Mask> {
+        self.mask
+    }
+}
+
+impl Display for Interface {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let mut mac = String::from("None");
+        let mut ipv4 = String::from("None");
+        let mut ipv6 = String::from("None");
+        let mut mask = String::from("None");
+        if let Some(addr) = &self.mac {
+            mac = addr.address();
+        }
+        if let Some(addr) = &self.ipv4 {
+            ipv4 = addr.address()
+        }
+        if let Some(addr) = &self.ipv6 {
+            ipv6 = addr.address()
+        }
+        if let Some(addr) = &self.mask {
+            mask = addr.mask()
+        }
+
+        write!(
+            f,
+            "==== {} ====
+index: {}
+description: {}
+mac: {}
+ipv4: {}                
+ipv6: {}
+mask: {}",
+            self.name, self.index, self.description, mac, ipv4, ipv6, mask
+        )
     }
 }
