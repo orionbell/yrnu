@@ -1,9 +1,10 @@
 //! # address.rs
 //! The `address` module provides general purpese tools for heandling and managing Ip and Mac
-//! addresses as well as defining networks.
-use crate::errors::addrerr::*;
-use crate::errors::iferr::*;
+//! addresses as well as defining networks and getting local network interfaces info.
+use crate::errors::coreerr::{addrerr::*, iferr::*};
+
 use core::fmt;
+use pnet::datalink::NetworkInterface;
 use pnet::{datalink::interfaces, ipnetwork::IpNetwork};
 use std::{
     error::Error,
@@ -13,7 +14,7 @@ use std::{
 };
 
 /// ## MacAddress
-/// `MacAddress` is a struct that present a MAC address
+/// `MacAddress` - MAC address struct
 #[derive(Debug, Clone, PartialEq)]
 pub struct MacAddress {
     address: String,
@@ -27,6 +28,14 @@ impl MacAddress {
     pub fn as_vector(&self) -> Vec<String> {
         MacAddress::get_parts(self.address.as_str())
     }
+    pub fn as_bytes(&self) -> [u8; 6] {
+        let mut parts = [0u8; 6];
+        for (i, part) in self.address.as_str().split(':').enumerate() {
+            parts[i] = u8::from_str_radix(part, 16).unwrap();
+        }
+        parts
+    }
+
     /// Checks if a giving `mac address` is valid
     pub fn is_valid(address: &str) -> bool {
         let parts = MacAddress::get_parts(address);
@@ -84,7 +93,7 @@ impl PartialOrd for MacAddress {
 }
 
 /// # IpVersion
-/// `IpVersion` is an enum that present the two versions of Internet Protocol (IP) versions.
+/// `IpVersion` - Internet Protocol (IP) versions enum.
 #[derive(Debug, Clone, PartialEq)]
 pub enum IpVersion {
     V4,
@@ -92,7 +101,7 @@ pub enum IpVersion {
 }
 
 /// # IpKind
-/// `IpKind` is an enum that present the diffrent kinds of Internet Protocols (IP) addresses.
+/// `IpKind` - Internet Protocols (IP) address types enum.
 #[derive(Debug, Clone, PartialEq)]
 pub enum IpKind {
     Public,
@@ -109,7 +118,7 @@ pub enum IpKind {
 }
 
 /// # IpAddress
-/// `IpAddress` is a struct that present an Internet Protocol (IP) address
+/// `IpAddress` - Internet Protocol (IP) address (V4/V6) struct
 #[derive(Debug, Clone, PartialEq)]
 pub struct IpAddress {
     address: String,
@@ -118,7 +127,7 @@ pub struct IpAddress {
 }
 
 /// # Mask
-/// `Mask` is a struct that present a CIDR subnet mask
+/// `Mask` - CIDR subnet mask struct
 #[derive(Debug, Clone, PartialEq)]
 pub struct Mask {
     mask: String,
@@ -127,7 +136,7 @@ pub struct Mask {
 }
 
 /// # Network
-/// `Network` is a struct that present computer network
+/// `Network` - computer network struct
 #[derive(Debug, Clone, PartialEq)]
 pub struct Network {
     id: IpAddress,
@@ -701,6 +710,8 @@ impl Display for Network {
     }
 }
 
+/// # Interface
+/// `Interface` - network interface of the local machine
 pub struct Interface {
     name: String,
     index: u32,
@@ -712,7 +723,19 @@ pub struct Interface {
 }
 
 impl Interface {
-    pub fn get_by_index(index: u32) -> Result<Interface, Box<dyn Error>> {
+    /// Returns all the network interfaces on the local machine
+    pub fn all() -> Vec<Interface> {
+        let mut infs = vec![];
+        for inf in interfaces() {
+            match Self::by_index(inf.index) {
+                Ok(res) => infs.push(res),
+                Err(_) => continue,
+            }
+        }
+        infs
+    }
+    /// Returns local network interface by index
+    pub fn by_index(index: u32) -> Result<Interface, Box<dyn Error>> {
         let mut mac: Option<MacAddress> = None;
         let mut ipv4: Option<IpAddress> = None;
         let mut ipv6: Option<IpAddress> = None;
@@ -767,34 +790,51 @@ impl Interface {
         }
         Err(Box::new(InterfaceNotExists))
     }
-    pub fn get_by_name(name: &str) -> Result<Interface, Box<dyn Error>> {
+    /// Returns local network interface by name
+    pub fn by_name(name: &str) -> Result<Interface, Box<dyn Error>> {
         for inf in interfaces() {
             if inf.name == name {
-                return Self::get_by_index(inf.index);
+                return Self::by_index(inf.index);
             }
         }
         Err(Box::new(InterfaceNotExists))
     }
-    pub fn name(self) -> String {
-        self.name
+    /// get interface name attribute
+    pub fn name(&self) -> String {
+        self.name.clone()
     }
-    pub fn index(self) -> u32 {
+    /// get interface index attribute
+    pub fn index(&self) -> u32 {
         self.index
     }
-    pub fn description(self) -> String {
-        self.description
+    /// get interface description attribute
+    pub fn description(&self) -> String {
+        self.description.clone()
     }
-    pub fn mac(self) -> Option<MacAddress> {
-        self.mac
+    /// get mac address attribute
+    pub fn mac(&self) -> Option<MacAddress> {
+        self.mac.clone()
     }
-    pub fn ipv4(self) -> Option<IpAddress> {
-        self.ipv4
+    /// get ipv4 address attribute
+    pub fn ipv4(&self) -> Option<IpAddress> {
+        self.ipv4.clone()
     }
-    pub fn ipv6(self) -> Option<IpAddress> {
-        self.ipv6
+    /// get ipv6 address attribute
+    pub fn ipv6(&self) -> Option<IpAddress> {
+        self.ipv6.clone()
     }
-    pub fn mask(self) -> Option<Mask> {
-        self.mask
+    /// get ipv4 subnet mask attribute
+    pub fn mask(&self) -> Option<Mask> {
+        self.mask.clone()
+    }
+    /// convert Interface instance to NetworkInterface instance
+    pub fn into(&self) -> Result<NetworkInterface, Box<dyn Error>> {
+        for inf in interfaces() {
+            if self.name == inf.name {
+                return Ok(inf);
+            }
+        }
+        Err(Box::new(InterfaceConvertionFailed))
     }
 }
 

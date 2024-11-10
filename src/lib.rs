@@ -8,6 +8,7 @@
 /// networks
 #[warn(unused)]
 pub mod core;
+pub mod packet;
 pub mod port;
 pub mod errors;
 // internal testing

@@ -1,2 +1,2 @@
-pub mod addrerr;
-pub mod iferr;
+pub mod coreerr;
+pub mod packeterr;

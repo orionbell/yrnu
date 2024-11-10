@@ -129,6 +129,11 @@ fn new_if_test() {
     let inf2 = Interface::get_by_index(2);
     println!("{}",inf.unwrap());
     println!("{}", inf2.unwrap());
+
+    let infs = Interface::get_all();
+    for inf in infs {
+        println!("\n\n{}",inf);
+    }
 }
 
 
