@@ -254,7 +254,7 @@ impl IpKind {
     /// Check if a giving Ip address is a linklocal address
     pub fn is_linklocal(address: &str) -> bool {
         if IpVersion::is_v6(address) {
-            if address[0..3].to_lowercase() == "fe80" {
+            if address[0..4].to_lowercase() == "fe80" {
                 true
             } else {
                 false
