@@ -4,5 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+clap = { version = "4.5.20", features = ["cargo"] }
+mlua = { version = "0.10.1", features = ["lua54", "vendored"] }
 pnet = "0.35.0"
 

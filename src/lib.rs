@@ -11,6 +11,7 @@ pub mod core;
 pub mod packet;
 pub mod port;
 pub mod errors;
+pub mod lua;
 // internal testing
 #[cfg(test)]
 mod tests {}
