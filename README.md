@@ -19,21 +19,17 @@ Yrnu is a `Rust` crate that provides simple and easy api for automating network 
 ### Examples
 #### address module
 ```lua
-local address = require('yrnu.address')
-local ip = address.IpAddress('192.168.1.1')
-local mac1 = address.MacAddress('ff:ee:ff:11:22:33')
-local mac2 = address.MacAddress('ef:ee:ff:11:22:33')
-local mask = address.Mask('255.255.255.128')
-local net1 = address.Network('10.0.1.0/27')
-local net2 = address.Network(ip,mask)
-
-print(net1.contines(ip))        -- false
-print(mac1 > mac2)              -- true
-print(ip.type())                -- Private
-print(ip.version())             -- V4
-print(net2.broadcast())         -- 192.168.1.127
-print(net2.broadcast().type())  -- Broadcast
-print(mac2.eui64())             -- fe80::edee:ffff:fe11:2233
+local ip_str = "10.0.1.255"
+if IpAddress.is_valid(ip_str) then
+    local ip = IpAddress.new(ip_str)
+    print(ip) -- 10.0.1.255 is version 4 broadcast address
+    local oct = ip:get_octats()
+    for i in pairs(oct) do
+        print(oct[i]) -- 10 0 1 255
+    end
+end
+local mask = Mask.from_prefix(22)
+print(IpKind.get_broadcast("10.0.0.0",mask)) -- 10.0.3.255 is version 4 broadcast address
 ```
 
 ### Shell Usage

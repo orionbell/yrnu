@@ -179,7 +179,6 @@ impl IpKind {
                 Err(..) => false,
             }
         } else if IpVersion::is_v6(address) {
-            println!("{}", address);
             if address.to_lowercase().starts_with("fd00")
                 || address.to_lowercase().starts_with("fc00")
             {
@@ -457,26 +456,32 @@ impl IpAddress {
             }
         }
     }
-    /// get the octats values of an Ipv4 address as u8 vector from giving &str
+    /// get the octats values of an ip address as u8 vector from giving &str
     pub fn get_octats_from_str(address: &str) -> Result<Vec<u8>, Box<dyn Error>> {
-        if !IpVersion::is_v4(address) {
-            return Err(Box::new(InvalidIpV4Address));
+        if IpVersion::is_v6(address) {
+            let address = Self::expend(address)?;
+            let parts = address
+                .split(":")
+                .map(|hex| u16::from_str_radix(hex, 16).unwrap())
+                .collect::<Vec<u16>>();
+            let parts: [u16; 8] = parts.try_into().unwrap();
+            Ok(Ipv6Addr::from(parts).octets().to_vec())
+        } else if IpVersion::is_v4(address) {
+            let octets: Vec<u8> = address
+                .split('.')
+                .collect::<Vec<&str>>()
+                .iter()
+                .map(|oct| oct.parse::<u8>())
+                .collect::<Result<Vec<u8>, _>>()
+                .unwrap_or(vec![]);
+            Ok(octets)
+        } else {
+            Err(Box::new(InvalidIpAddress))
         }
-        let octats: Vec<u8> = address
-            .split('.')
-            .collect::<Vec<&str>>()
-            .iter()
-            .map(|oct| oct.parse::<u8>())
-            .collect::<Result<Vec<u8>, _>>()
-            .unwrap_or(vec![]);
-        Ok(octats)
     }
     /// get the octats values of an ipv4 IpAddress instance
     pub fn get_octats(&self) -> Result<Vec<u8>, Box<dyn Error>> {
-        if IpVersion::is_v4(self.address().as_str()) {
-            return IpAddress::get_octats_from_str(self.address().as_str());
-        }
-        Err(Box::new(InvalidIpV4Address))
+        IpAddress::get_octats_from_str(self.address().as_str())
     }
     // getters for the IpAddress properties
     /// a getter function for the version propertie
@@ -507,6 +512,84 @@ impl IpAddress {
             version: IpVersion::V6,
             kind: IpKind::Linklocal,
             address,
+        }
+    }
+    /// expends a giving ipv6 address
+    pub fn expend(address: &str) -> Result<String, Box<dyn std::error::Error>> {
+        if IpVersion::is_v6(address) {
+            let mut exp_addr = String::new();
+            let parts = address.split(":").collect::<Vec<&str>>();
+            let addr_halfs = address.split("::").collect::<Vec<&str>>();
+            let mut address = String::new();
+            if addr_halfs.len() == 2 {
+                let mut zero_parts = String::from(":");
+                for _ in 0..(8 - parts.len() + 1) {
+                    zero_parts.push_str("0000:");
+                }
+                address = addr_halfs[0].to_owned() + zero_parts.as_str() + addr_halfs[1];
+            } else {
+                address = addr_halfs[0].to_string();
+            }
+            let parts = address.split(":").collect::<Vec<&str>>();
+            let length = parts.len();
+            for (i, part) in parts.into_iter().enumerate() {
+                if part.len() != 4 {
+                    exp_addr = exp_addr + "0".repeat(4 - part.len()).as_str();
+                }
+                exp_addr.push_str(part);
+                if i + 1 != length {
+                    exp_addr.push_str(":")
+                };
+            }
+            Ok(exp_addr)
+        } else {
+            Err(Box::new(InvalidIpV6Address {}))
+        }
+    }
+    /// shorten a giving ipv6 address
+    pub fn shorten(address: &str) -> Result<String, Box<dyn std::error::Error>> {
+        if IpVersion::is_v6(address) {
+            let octets = Self::get_octats_from_str(&address)?;
+            let octets: [u8; 16] = octets.try_into().unwrap();
+            let octets = Ipv6Addr::from(octets).segments();
+            let mut max_zeros: usize = 0;
+            let mut max_zeros_index = 0;
+            let mut curr_zeros = 0;
+            let mut curr_zeros_index = 0;
+            let mut is_leading = true;
+            let mut shorten_addr = String::new();
+            for (i, oct) in octets.clone().into_iter().enumerate() {
+                if oct == 0 {
+                    if is_leading {
+                        is_leading = false;
+                        curr_zeros_index = i;
+                    }
+                    curr_zeros += 1;
+                } else {
+                    is_leading = true;
+                    if curr_zeros > max_zeros {
+                        max_zeros = curr_zeros;
+                        max_zeros_index = curr_zeros_index;
+                    }
+                    curr_zeros = 0;
+                }
+            }
+            for i in 0..((octets.len()) as usize) {
+                if i >= max_zeros_index && i < max_zeros_index + max_zeros {
+                    continue;
+                }
+                shorten_addr = format!("{}{:x}", shorten_addr, octets[i]);
+                if i != octets.len() - 1 {
+                    if i == max_zeros_index - 1 {
+                        shorten_addr.push_str("::");
+                    } else {
+                        shorten_addr.push_str(":");
+                    }
+                }
+            }
+            Ok(shorten_addr)
+        } else {
+            Err(Box::new(InvalidIpV6Address))
         }
     }
 }
