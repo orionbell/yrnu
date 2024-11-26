@@ -171,15 +171,16 @@ impl UserData for IpAddress {
         fields.add_field_method_get("kind", |_, this| Ok(this.kind()));
     }
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("get_octats", |_, this, ()| match this.get_octats() {
-            Ok(kind) => Ok(kind),
-            Err(_) => Err(mlua::Error::BadArgument {
-                to: None,
+        methods.add_method("get_octets", |_, this, ()| match this.get_octets() {
+            Ok(octs) => Ok(octs),
+            Err(e) => Err(mlua::Error::BadArgument {
+                to: Some("get_octets".to_string()),
                 pos: 1,
-                name: None,
-                cause: std::sync::Arc::new(mlua::Error::RuntimeError(
-                    "Invalid Argument".to_string(),
-                )),
+                name: Some("self".to_string()),
+                cause: std::sync::Arc::new(mlua::Error::RuntimeError(format!(
+                    "Invalid Argument for function get_octats: {}",
+                    e
+                ))),
             }),
         });
         methods.add_method("get_expended", |_, this, ()| Ok(this.get_expended()));
@@ -193,12 +194,13 @@ impl LuaSetup for IpAddress {
                 |_, address: String| match IpAddress::new(address.as_str()) {
                     Ok(addr) => Ok(addr),
                     Err(_) => Err(mlua::Error::BadArgument {
-                        to: None,
+                        to: Some("IpAddress.new".to_string()),
                         pos: 1,
-                        name: None,
-                        cause: std::sync::Arc::new(mlua::Error::RuntimeError(
-                            "Invalid Argument".to_string(),
-                        )),
+                        name: Some("address".to_string()),
+                        cause: std::sync::Arc::new(mlua::Error::RuntimeError(format!(
+                            "Invalid Address: {}",
+                            address
+                        ))),
                     }),
                 },
             )?;
@@ -214,12 +216,13 @@ impl LuaSetup for IpAddress {
                 |_, address: String| match IpAddress::expend(address.as_str()) {
                     Ok(addr) => Ok(addr),
                     Err(_) => Err(mlua::Error::BadArgument {
-                        to: None,
+                        to: Some("IpAddress.expend".to_string()),
                         pos: 1,
-                        name: None,
-                        cause: std::sync::Arc::new(mlua::Error::RuntimeError(
-                            "Invalid Argument".to_string(),
-                        )),
+                        name: Some("address".to_string()),
+                        cause: std::sync::Arc::new(mlua::Error::RuntimeError(format!(
+                            "Invalid Address: {}",
+                            address
+                        ))),
                     }),
                 },
             )?,
@@ -230,12 +233,13 @@ impl LuaSetup for IpAddress {
                 |_, address: String| match IpAddress::shorten(address.as_str()) {
                     Ok(addr) => Ok(addr),
                     Err(_) => Err(mlua::Error::BadArgument {
-                        to: None,
+                        to: Some("IpAddress.shorten".to_string()),
                         pos: 1,
-                        name: None,
-                        cause: std::sync::Arc::new(mlua::Error::RuntimeError(
-                            "Invalid Argument".to_string(),
-                        )),
+                        name: Some("address".to_string()),
+                        cause: std::sync::Arc::new(mlua::Error::RuntimeError(format!(
+                            "Invalid Address: {}",
+                            address
+                        ))),
                     }),
                 },
             )?,
@@ -278,9 +282,9 @@ impl LuaSetup for Mask {
             lua.create_function(|_, mask: String| match Mask::new(mask.as_str()) {
                 Ok(mask) => Ok(mask),
                 Err(_) => Err(mlua::Error::BadArgument {
-                    to: None,
+                    to: Some("Mask.new".to_string()),
                     pos: 1,
-                    name: None,
+                    name: Some("mask".to_string()),
                     cause: std::sync::Arc::new(mlua::Error::RuntimeError(
                         "Invalid Argument".to_string(),
                     )),
@@ -297,12 +301,13 @@ impl LuaSetup for Mask {
             lua.create_function(|_, prefix: u8| match Mask::from_prefix(prefix) {
                 Ok(mask) => Ok(mask),
                 Err(_) => Err(mlua::Error::BadArgument {
-                    to: None,
+                    to: Some("Mask.from_prefix".to_string()),
                     pos: 1,
-                    name: None,
-                    cause: std::sync::Arc::new(mlua::Error::RuntimeError(
-                        "Invalid Argument".to_string(),
-                    )),
+                    name: Some("prefix".to_string()),
+                    cause: std::sync::Arc::new(mlua::Error::RuntimeError(format!(
+                        "Invalid mask prefix: {}",
+                        prefix
+                    ))),
                 }),
             })?,
         )?;
@@ -311,12 +316,13 @@ impl LuaSetup for Mask {
             lua.create_function(|_, mask: String| match Mask::get_prefix(mask.as_str()) {
                 Ok(prefix) => Ok(prefix),
                 Err(_) => Err(mlua::Error::BadArgument {
-                    to: None,
+                    to: Some("Mask.get_prefix".to_string()),
                     pos: 1,
-                    name: None,
-                    cause: std::sync::Arc::new(mlua::Error::RuntimeError(
-                        "Invalid Argument".to_string(),
-                    )),
+                    name: Some("mask".to_string()),
+                    cause: std::sync::Arc::new(mlua::Error::RuntimeError(format!(
+                        "Invalid mask: {}",
+                        mask
+                    ))),
                 }),
             })?,
         )?;
@@ -354,12 +360,13 @@ impl UserData for Network {
             |_, this, address: String| match IpAddress::new(&address) {
                 Ok(address) => Ok(this.containes(&address)),
                 Err(_) => Err(mlua::Error::BadArgument {
-                    to: None,
-                    pos: 1,
-                    name: None,
-                    cause: std::sync::Arc::new(mlua::Error::RuntimeError(
-                        "Invalid Argument".to_string(),
-                    )),
+                    to: Some("Network.containes".to_string()),
+                    pos: 2,
+                    name: Some("address".to_string()),
+                    cause: std::sync::Arc::new(mlua::Error::RuntimeError(format!(
+                        "Invalid address: {}",
+                        address
+                    ))),
                 }),
             },
         );
@@ -368,15 +375,33 @@ impl UserData for Network {
 impl LuaSetup for Network {
     fn setup(lua: &mlua::Lua) -> Result<()> {
         let constructor = lua.create_function(|_, (netid, mask): (IpAddress, Mask)| {
-            match Network::new(netid, mask) {
+            match Network::new(netid.clone(), mask.clone()) {
                 Ok(net) => Ok(net),
                 Err(_) => Err(mlua::Error::BadArgument {
-                    to: None,
-                    pos: 1,
-                    name: None,
-                    cause: std::sync::Arc::new(mlua::Error::RuntimeError(
-                        "Invalid Argument".to_string(),
-                    )),
+                    to: Some("Network.new".to_string()),
+                    pos: if IpKind::is_netid(&netid.address(), &mask) {
+                        1
+                    } else {
+                        2
+                    },
+                    name: if IpKind::is_netid(&netid.address(), &mask) {
+                        Some("netid".to_string())
+                    } else {
+                        Some("mask".to_string())
+                    },
+                    cause: std::sync::Arc::new(mlua::Error::RuntimeError(format!(
+                        "Invalid {}: {}",
+                        if IpKind::is_netid(&netid.address(), &mask) {
+                            "net id"
+                        } else {
+                            "mask"
+                        },
+                        if IpKind::is_netid(&netid.address(), &mask) {
+                            netid.address()
+                        } else {
+                            mask.mask()
+                        }
+                    ))),
                 }),
             }
         })?;
@@ -387,12 +412,13 @@ impl LuaSetup for Network {
             lua.create_function(|_, net: String| match Network::from_str(net.as_str()) {
                 Ok(net) => Ok(net),
                 Err(_) => Err(mlua::Error::BadArgument {
-                    to: None,
+                    to: Some("from".to_string()),
                     pos: 1,
-                    name: None,
-                    cause: std::sync::Arc::new(mlua::Error::RuntimeError(
-                        "Invalid Argument".to_string(),
-                    )),
+                    name: Some("net".to_string()),
+                    cause: std::sync::Arc::new(mlua::Error::RuntimeError(format!(
+                        "Invalid Network string {} use the \"netid/prefix\" format",
+                        net
+                    ))),
                 }),
             })?,
         )?;
@@ -439,12 +465,13 @@ impl LuaSetup for MacAddress {
             lua.create_function(|_, address: String| match MacAddress::new(&address) {
                 Ok(address) => Ok(address),
                 Err(_) => Err(mlua::Error::BadArgument {
-                    to: None,
+                    to: Some("MacAddress.new".to_string()),
                     pos: 1,
-                    name: None,
-                    cause: std::sync::Arc::new(mlua::Error::RuntimeError(
-                        "Invalid Argument".to_string(),
-                    )),
+                    name: Some("address".to_string()),
+                    cause: std::sync::Arc::new(mlua::Error::RuntimeError(format!(
+                        "Invalid mac address: {}",
+                        address
+                    ))),
                 }),
             })?;
         let macaddress_table = lua.create_table()?;
@@ -466,7 +493,7 @@ impl FromLua for Interface {
         }
         Err(mlua::Error::FromLuaConversionError {
             from: "table",
-            to: "MacAddress".to_string(),
+            to: "Interface".to_string(),
             message: Some("convertion failed".to_string()),
         })
     }
@@ -493,12 +520,13 @@ impl LuaSetup for Interface {
             lua.create_function(|_, index: u32| match Interface::by_index(index) {
                 Ok(inf) => Ok(inf),
                 Err(_) => Err(mlua::Error::BadArgument {
-                    to: None,
+                    to: Some("Interface.by_index".to_string()),
                     pos: 1,
-                    name: None,
-                    cause: std::sync::Arc::new(mlua::Error::RuntimeError(
-                        "Invalid Argument".to_string(),
-                    )),
+                    name: Some("index".to_string()),
+                    cause: std::sync::Arc::new(mlua::Error::RuntimeError(format!(
+                        "Invalid interface index: {}",
+                        index
+                    ))),
                 }),
             })?,
         )?;
@@ -507,12 +535,13 @@ impl LuaSetup for Interface {
             lua.create_function(|_, name: String| match Interface::by_name(&name) {
                 Ok(inf) => Ok(inf),
                 Err(_) => Err(mlua::Error::BadArgument {
-                    to: None,
+                    to: Some("Interface.by_name".to_string()),
                     pos: 1,
-                    name: None,
-                    cause: std::sync::Arc::new(mlua::Error::RuntimeError(
-                        "Invalid Argument".to_string(),
-                    )),
+                    name: Some("name".to_string()),
+                    cause: std::sync::Arc::new(mlua::Error::RuntimeError(format!(
+                        "Invalid interface name: {}",
+                        name
+                    ))),
                 }),
             })?,
         )?;

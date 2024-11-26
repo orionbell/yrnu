@@ -209,7 +209,7 @@ impl IpKind {
     /// Check if a giving Ip v4 address is a broadcast address
     pub fn is_broadcast(address: &str, mask: &Mask) -> bool {
         if IpVersion::is_v4(address) {
-            let octats = IpAddress::get_octats_from_str(address).unwrap();
+            let octats = IpAddress::get_octets_from_str(address).unwrap();
             IpKind::is_netid(
                 format!(
                     "{}.{}.{}.{}",
@@ -231,7 +231,7 @@ impl IpKind {
             return false;
         }
         let hosts = mask.num_of_hosts();
-        let octets = IpAddress::get_octats_from_str(address).unwrap();
+        let octets = IpAddress::get_octets_from_str(address).unwrap();
         octets[3] as u32 % hosts == 0
     }
     /// Check is a giving Ip address is a multicast address
@@ -336,7 +336,7 @@ impl IpKind {
     pub fn get_broadcast(netid: &str, mask: &Mask) -> Result<IpAddress, Box<dyn Error>> {
         if IpKind::is_netid(netid, mask) {
             let max_hosts = mask.num_of_hosts();
-            let octats = IpAddress::get_octats_from_str(netid).unwrap();
+            let octats = IpAddress::get_octets_from_str(netid).unwrap();
             let mut addr: String;
             if max_hosts < Mask::MAX_CLASS_C_ADDR as u32 {
                 addr = format!(
@@ -463,7 +463,7 @@ impl IpAddress {
         }
     }
     /// get the octats values of an ip address as u8 vector from giving &str
-    pub fn get_octats_from_str(address: &str) -> Result<Vec<u8>, Box<dyn Error>> {
+    pub fn get_octets_from_str(address: &str) -> Result<Vec<u8>, Box<dyn Error>> {
         if IpVersion::is_v6(address) {
             let address = Self::expend(address)?;
             let parts = address
@@ -486,8 +486,8 @@ impl IpAddress {
         }
     }
     /// get the octats values of an ipv4 IpAddress instance
-    pub fn get_octats(&self) -> Result<Vec<u8>, Box<dyn Error>> {
-        IpAddress::get_octats_from_str(self.address().as_str())
+    pub fn get_octets(&self) -> Result<Vec<u8>, Box<dyn Error>> {
+        IpAddress::get_octets_from_str(self.address().as_str())
     }
     /// get the ipv6 address as expended
     pub fn get_expended(&self) -> String {
@@ -559,7 +559,7 @@ impl IpAddress {
     /// shorten a giving ipv6 address
     pub fn shorten(address: &str) -> Result<String, Box<dyn std::error::Error>> {
         if IpVersion::is_v6(address) {
-            let octets = Self::get_octats_from_str(&address)?;
+            let octets = Self::get_octets_from_str(&address)?;
             let octets: [u8; 16] = octets.try_into().unwrap();
             let octets = Ipv6Addr::from(octets).segments();
             let mut max_zeros: usize = 0;
@@ -623,7 +623,7 @@ impl Mask {
 
     /// Checks if a giving Subnet Mask is valid
     pub fn is_valid(mask: &str) -> bool {
-        let octats_values: Vec<u8> = IpAddress::get_octats_from_str(mask).unwrap_or(vec![]);
+        let octats_values: Vec<u8> = IpAddress::get_octets_from_str(mask).unwrap_or(vec![]);
         if octats_values.len() == 0 {
             return false;
         }
@@ -715,7 +715,7 @@ impl Network {
     /// Creates a new ipv4 Network instance from giving net id and subnet mask
     pub fn new(id: IpAddress, mask: Mask) -> Result<Network, Box<dyn Error>> {
         if IpKind::is_netid(id.address().as_str(), &mask) {
-            let octats = IpAddress::get_octats(&id).unwrap();
+            let octats = IpAddress::get_octets(&id).unwrap();
             let hosts = mask.num_of_hosts() + 1;
             if IpVersion::is_v4(&id.address().as_str()) {
                 return Ok(Network {
@@ -767,9 +767,9 @@ impl Network {
     /// Checks if a giving Ip address is in the self network
     pub fn containes(&self, address: &IpAddress) -> bool {
         if IpVersion::is_v4(address.address().as_str()) {
-            let octats = address.get_octats().unwrap();
-            let netid_octs = self.id.get_octats().unwrap();
-            let bcast_octs = self.broadcast.get_octats().unwrap();
+            let octats = address.get_octets().unwrap();
+            let netid_octs = self.id.get_octets().unwrap();
+            let bcast_octs = self.broadcast.get_octets().unwrap();
             let prefix = self.mask.prefix();
             if prefix >= 24 {
                 octats[3] > netid_octs[3] && octats[3] < bcast_octs[3]
