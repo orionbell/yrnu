@@ -35,7 +35,13 @@ fn new_ipaddress_test() {
     let addr2 = IpAddress::new("fc00::1").unwrap();
     assert_eq!(addr2.to_string(),"fc00::1 is a version 6 uniqe local ip address");
 }
-
+#[test]
+fn expend_shorten_test() {
+    assert_eq!(IpAddress::expend("f01:0:1:20:300::10").unwrap(),"0f01:0000:0001:0020:0300:0000:0000:0010".to_string());
+    assert_eq!(IpAddress::shorten("0f01:0000:0001:0020:0300:0000:0000:0010").unwrap(),"f01:0:1:20:300::10".to_string());
+    assert_eq!(IpAddress::expend("0f01:0:0001:020:0300::0010").unwrap(),"0f01:0000:0001:0020:0300:0000:0000:0010".to_string());
+    assert_eq!(IpAddress::shorten("0f01:00:0001:0020:0300::0010").unwrap(),"f01:0:1:20:300::10".to_string());
+}
 //#[test]
 //fn ipaddress_cmp_test() {
     
@@ -64,11 +70,15 @@ fn new_mask_test() {
 fn new_network_test() {
     let id = IpAddress::new("192.168.1.0").unwrap();
     let mask = Mask::from_prefix(28).unwrap();
+    let id2 = IpAddress::new("192.168.1.16").unwrap();
+    let mask2 = Mask::new("255.255.255.240").unwrap();
+    let net = Network::new(id2, mask2).unwrap();
     let net1 = Network::new(id, mask).unwrap();
     //let mask = Mask::from_prefix(27).unwrap();
     let net2 = Network::from_str("192.168.1.32/27").expect("failed");
     let big_net = Network::from_str("10.0.16.0/20").expect("failed");
     let super_big_net = Network::from_str("10.16.0.0/12").expect("failed");
+    assert_eq!("192.168.1.16/28",net.to_string());
     assert_eq!("192.168.1.0/28",net1.to_string());
     assert_eq!("192.168.1.32/27",net2.to_string());
     assert_eq!("192.168.1.63",net2.broadcast().address());
@@ -97,7 +107,6 @@ fn new_mac_test() {
     assert_eq!(mac2.is_err(),true);
     assert_eq!(mac3.is_err(),true);
     assert_eq!(mac4.is_err(),true);
-    println!("{:?}",mac1.unwrap().as_vector());
 }
 
 #[test]
@@ -118,21 +127,21 @@ fn eui64_test() {
     let mac2 = MacAddress::new("11:22:33:44:55:66").unwrap();
     let mac3 = MacAddress::new("12:34:56:78:9a:cd").unwrap();
 
-    assert_eq!(IpAddress::eui64(&mac1).address(),"FE80::A8BB:CCFF:FEEE:FF11");
-    assert_eq!(IpAddress::eui64(&mac2).address(),"FE80::1322:33FF:FE44:5566");
-    assert_eq!(IpAddress::eui64(&mac3).address(),"FE80::1034:56FF:FE78:9ACD");
+    assert_eq!(IpAddress::eui64(&mac1).address(),"fe80::a8bb:ccff:feee:ff11");
+    assert_eq!(IpAddress::eui64(&mac2).address(),"fe80::1322:33ff:fe44:5566");
+    assert_eq!(IpAddress::eui64(&mac3).address(),"fe80::1034:56ff:fe78:9acd");
 }
 
 #[test]
 fn new_if_test() {
-    let inf = Interface::get_by_name("wlan0");
-    let inf2 = Interface::get_by_index(2);
-    println!("{}",inf.unwrap());
-    println!("{}", inf2.unwrap());
+    let inf = Interface::by_name("wlan0");
+    let inf2 = Interface::by_index(2);
+ //   println!("{}",inf.unwrap());
+ //   println!("{}", inf2.unwrap());
 
-    let infs = Interface::get_all();
+    let infs = Interface::all();
     for inf in infs {
-        println!("\n\n{}",inf);
+//        println!("\n\n{}",inf);
     }
 }
 

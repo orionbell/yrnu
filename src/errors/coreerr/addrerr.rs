@@ -3,6 +3,7 @@ use std::fmt::{Debug, Display, Formatter, Result};
 
 pub struct InvalidIpAddress;
 pub struct InvalidIpV4Address;
+pub struct InvalidIpV6Address;
 pub struct InvalidMacAddress;
 pub struct InvalidMask;
 pub struct InvalidPrefix;
@@ -13,6 +14,7 @@ impl Error for InvalidMacAddress {}
 impl Error for InvalidMask {}
 impl Error for InvalidNetwork {}
 impl Error for InvalidIpV4Address {}
+impl Error for InvalidIpV6Address {}
 impl Error for InvalidPrefix {}
 
 impl Display for InvalidIpAddress {
@@ -76,6 +78,17 @@ impl Debug for InvalidIpV4Address {
     }
 }
 
+impl Display for InvalidIpV6Address {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(f, "An invalid ipv6 address.")
+    }
+}
+
+impl Debug for InvalidIpV6Address {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(f, "{{ file: {}, line: {} }}", file!(), line!())
+    }
+}
 
 impl Display for InvalidPrefix {
     fn fmt(&self, f: &mut Formatter) -> Result {
