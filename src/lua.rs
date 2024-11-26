@@ -12,6 +12,11 @@ pub fn init() -> Result<Lua> {
     lua.load_std_libs(StdLib::ALL_SAFE)?;
     let _ = IpVersion::setup(&lua);
     let _ = IpKind::setup(&lua);
+    let _ = IpAddress::setup(&lua);
+    let _ = Mask::setup(&lua);
+    let _ = Network::setup(&lua);
+    let _ = MacAddress::setup(&lua);
+    let _ = Interface::setup(&lua);
     Ok(lua)
 }
 
