@@ -9,6 +9,7 @@
 #[warn(unused)]
 pub mod core;
 pub mod packet;
+pub mod config;
 pub mod port;
 pub mod errors;
 pub mod lua;
