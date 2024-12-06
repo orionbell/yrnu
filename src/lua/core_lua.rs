@@ -5,8 +5,8 @@ use mlua::{FromLua, Lua, LuaNativeFn, MetaMethod, Result, UserData, UserDataMeth
 impl FromLua for IpVersion {
     fn from_lua(value: Value, lua: &Lua) -> mlua::Result<Self> {
         if let Some(value) = value.as_userdata() {
-            let value = value.borrow::<IpVersion>()?;
-            return Ok(value.clone());
+            let value = value.take::<IpVersion>()?;
+            return Ok(value);
         }
         Err(mlua::Error::FromLuaConversionError {
             from: "table",
@@ -154,8 +154,8 @@ impl LuaSetup for IpKind {
 impl FromLua for IpAddress {
     fn from_lua(value: Value, lua: &Lua) -> Result<Self> {
         if let Some(value) = value.as_userdata() {
-            let value = value.borrow::<IpAddress>()?;
-            return Ok(value.clone());
+            let value = value.take::<IpAddress>()?;
+            return Ok(value);
         }
         Err(mlua::Error::FromLuaConversionError {
             from: "table",
@@ -166,9 +166,9 @@ impl FromLua for IpAddress {
 }
 impl UserData for IpAddress {
     fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
-        fields.add_field_method_get("address", |_, this| Ok(this.address()));
-        fields.add_field_method_get("version", |_, this| Ok(this.version()));
-        fields.add_field_method_get("kind", |_, this| Ok(this.kind()));
+        fields.add_field_method_get("address", |_, this| Ok(this.address().to_owned()));
+        fields.add_field_method_get("version", |_, this| Ok(this.version().to_owned()));
+        fields.add_field_method_get("kind", |_, this| Ok(this.kind().to_owned()));
     }
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("get_octets", |_, this, ()| match this.get_octets() {
@@ -256,8 +256,8 @@ impl LuaSetup for IpAddress {
 impl FromLua for Mask {
     fn from_lua(value: Value, lua: &Lua) -> Result<Self> {
         if let Some(value) = value.as_userdata() {
-            let value = value.borrow::<Mask>()?;
-            return Ok(value.clone());
+            let value = value.take::<Mask>()?;
+            return Ok(value);
         }
         Err(mlua::Error::FromLuaConversionError {
             from: "table",
@@ -268,9 +268,9 @@ impl FromLua for Mask {
 }
 impl UserData for Mask {
     fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
-        fields.add_field_method_get("mask", |_, this| Ok(this.mask()));
-        fields.add_field_method_get("prefix", |_, this| Ok(this.prefix()));
-        fields.add_field_method_get("num_of_hosts", |_, this| Ok(this.num_of_hosts()));
+        fields.add_field_method_get("mask", |_, this| Ok(this.mask().to_owned()));
+        fields.add_field_method_get("prefix", |_, this| Ok(this.prefix().to_owned()));
+        fields.add_field_method_get("num_of_hosts", |_, this| Ok(this.num_of_hosts().to_owned()));
     }
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| Ok(format!("{}", this)));
@@ -334,8 +334,8 @@ impl LuaSetup for Mask {
 impl FromLua for Network {
     fn from_lua(value: Value, lua: &Lua) -> Result<Self> {
         if let Some(value) = value.as_userdata() {
-            let value = value.borrow::<Network>()?;
-            return Ok(value.clone());
+            let value = value.take::<Network>()?;
+            return Ok(value);
         }
         Err(mlua::Error::FromLuaConversionError {
             from: "table",
@@ -346,19 +346,19 @@ impl FromLua for Network {
 }
 impl UserData for Network {
     fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
-        fields.add_field_method_get("broadcast", |_, this| Ok(this.broadcast()));
-        fields.add_field_method_get("id", |_, this| Ok(this.netid()));
-        fields.add_field_method_get("mask", |_, this| Ok(this.mask().clone()));
+        fields.add_field_method_get("broadcast", |_, this| Ok(this.broadcast().to_owned()));
+        fields.add_field_method_get("id", |_, this| Ok(this.netid().to_owned()));
+        fields.add_field_method_get("mask", |_, this| Ok(this.mask().to_owned()));
     }
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| Ok(format!("{}", this)));
-        methods.add_method("containes", |_, this, addr: IpAddress| {
-            Ok(this.containes(&addr))
+        methods.add_method("contains", |_, this, addr: IpAddress| {
+            Ok(this.contains(&addr))
         });
         methods.add_method(
-            "containes_str",
+            "contains_str",
             |_, this, address: String| match IpAddress::new(&address) {
-                Ok(address) => Ok(this.containes(&address)),
+                Ok(address) => Ok(this.contains(&address)),
                 Err(_) => Err(mlua::Error::BadArgument {
                     to: Some("Network.containes".to_string()),
                     pos: 2,
@@ -396,10 +396,10 @@ impl LuaSetup for Network {
                         } else {
                             "mask"
                         },
-                        if IpKind::is_netid(&netid.address(), &mask) {
-                            netid.address()
+                        if IpKind::is_netid(netid.address(), &mask) {
+                            netid.address().to_owned()
                         } else {
-                            mask.mask()
+                            format!("{} for net id {}", mask.mask(), &netid.address())
                         }
                     ))),
                 }),
@@ -430,8 +430,8 @@ impl LuaSetup for Network {
 impl FromLua for MacAddress {
     fn from_lua(value: Value, lua: &Lua) -> Result<Self> {
         if let Some(value) = value.as_userdata() {
-            let value = value.borrow::<MacAddress>()?;
-            return Ok(value.clone());
+            let value = value.take::<MacAddress>()?;
+            return Ok(value);
         }
         Err(mlua::Error::FromLuaConversionError {
             from: "table",
@@ -442,7 +442,7 @@ impl FromLua for MacAddress {
 }
 impl UserData for MacAddress {
     fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
-        fields.add_field_method_get("address", |_, this| Ok(this.address()));
+        fields.add_field_method_get("address", |_, this| Ok(this.address().to_owned()));
     }
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| Ok(format!("{}", this)));
@@ -488,8 +488,8 @@ impl LuaSetup for MacAddress {
 impl FromLua for Interface {
     fn from_lua(value: Value, lua: &Lua) -> Result<Self> {
         if let Some(value) = value.as_userdata() {
-            let value = value.borrow::<Interface>()?;
-            return Ok(value.clone());
+            let value = value.take::<Interface>()?;
+            return Ok(value);
         }
         Err(mlua::Error::FromLuaConversionError {
             from: "table",
@@ -500,13 +500,13 @@ impl FromLua for Interface {
 }
 impl UserData for Interface {
     fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
-        fields.add_field_method_get("name", |_, this| Ok(this.name()));
-        fields.add_field_method_get("index", |_, this| Ok(this.index()));
-        fields.add_field_method_get("description", |_, this| Ok(this.description()));
-        fields.add_field_method_get("mac", |_, this| Ok(this.mac()));
-        fields.add_field_method_get("ipv4", |_, this| Ok(this.ipv4()));
-        fields.add_field_method_get("ipv6", |_, this| Ok(this.ipv6()));
-        fields.add_field_method_get("mask", |_, this| Ok(this.mask()));
+        fields.add_field_method_get("name", |_, this| Ok(this.name().to_owned()));
+        fields.add_field_method_get("index", |_, this| Ok(this.index().to_owned()));
+        fields.add_field_method_get("description", |_, this| Ok(this.description().to_owned()));
+        fields.add_field_method_get("mac", |_, this| Ok(this.mac().to_owned()));
+        fields.add_field_method_get("ipv4", |_, this| Ok(this.ipv4().to_owned()));
+        fields.add_field_method_get("ipv6", |_, this| Ok(this.ipv6().to_owned()));
+        fields.add_field_method_get("mask", |_, this| Ok(this.mask().to_owned()));
     }
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| Ok(format!("{}", this)));

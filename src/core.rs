@@ -58,8 +58,8 @@ impl MacAddress {
         }
         Err(Box::new(InvalidMacAddress))
     }
-    pub fn address(&self) -> String {
-        self.address.clone()
+    pub fn address(&self) -> &String {
+        &self.address
     }
 }
 impl Display for MacAddress {
@@ -338,7 +338,7 @@ impl IpKind {
             let max_hosts = mask.num_of_hosts();
             let octats = IpAddress::get_octets_from_str(netid).unwrap();
             let mut addr: String;
-            if max_hosts < Mask::MAX_CLASS_C_ADDR as u32 {
+            if *max_hosts < Mask::MAX_CLASS_C_ADDR as u32 {
                 addr = format!(
                     "{}.{}.{}.{}",
                     octats[0],
@@ -346,7 +346,7 @@ impl IpKind {
                     octats[2],
                     max_hosts + octats[3] as u32 - 1
                 );
-            } else if max_hosts < Mask::MAX_CLASS_B_ADDR {
+            } else if *max_hosts < Mask::MAX_CLASS_B_ADDR {
                 let preportion = (max_hosts) / Mask::MAX_CLASS_C_ADDR as u32;
                 addr = format!(
                     "{}.{}.{}.{}",
@@ -355,7 +355,7 @@ impl IpKind {
                     octats[2] as u32 + preportion - 1,
                     255
                 );
-            } else if (max_hosts as u64) < Mask::MAX_CLASS_A_ADDR {
+            } else if (*max_hosts as u64) < Mask::MAX_CLASS_A_ADDR {
                 let preportion = (max_hosts) / Mask::MAX_CLASS_B_ADDR;
                 addr = format!(
                     "{}.{}.{}.{}",
@@ -365,7 +365,7 @@ impl IpKind {
                     255
                 );
             } else {
-                let preportion = ((max_hosts) as u64) / Mask::MAX_CLASS_A_ADDR;
+                let preportion = ((*max_hosts) as u64) / Mask::MAX_CLASS_A_ADDR;
                 addr = format!(
                     "{}.{}.{}.{}",
                     octats[0] as u64 + preportion - 1,
@@ -495,16 +495,16 @@ impl IpAddress {
     }
     // getters for the IpAddress properties
     /// a getter function for the version propertie
-    pub fn version(&self) -> IpVersion {
-        self.version.clone()
+    pub fn version(&self) -> &IpVersion {
+        &self.version
     }
     /// a getter function for the address propertie
-    pub fn address(&self) -> String {
-        self.address.clone()
+    pub fn address(&self) -> &String {
+        &self.address
     }
     /// a getter function for the kind propertie
-    pub fn kind(&self) -> IpKind {
-        self.kind.clone()
+    pub fn kind(&self) -> &IpKind {
+        &self.kind
     }
     /// implementation of the EUI-64 algorithem
     pub fn eui64(mac: &MacAddress) -> IpAddress {
@@ -658,7 +658,7 @@ impl Mask {
             return Ok(Mask {
                 mask: mask.to_string(),
                 prefix,
-                num_of_hosts: (2 as u32).pow(32 - prefix as u32) ,
+                num_of_hosts: (2 as u32).pow(32 - prefix as u32),
             });
         }
         Err(Box::new(InvalidMask))
@@ -692,16 +692,16 @@ impl Mask {
         })
     }
 
-    pub fn mask(&self) -> String {
-        self.mask.clone()
+    pub fn mask(&self) -> &String {
+        &self.mask
     }
 
-    pub fn prefix(&self) -> u8 {
-        self.prefix.clone()
+    pub fn prefix(&self) -> &u8 {
+        &self.prefix
     }
 
-    pub fn num_of_hosts(&self) -> u32 {
-        self.num_of_hosts.clone()
+    pub fn num_of_hosts(&self) -> &u32 {
+        &self.num_of_hosts
     }
 }
 
@@ -744,7 +744,7 @@ impl Network {
             return Err(Box::new(InvalidNetwork));
         }
         let prefix = networks_items[1].parse::<u8>().unwrap_or(0);
-        println!("{}",prefix);
+        println!("{}", prefix);
         if prefix == 0 {
             return Err(Box::new(InvalidNetwork));
         }
@@ -765,17 +765,17 @@ impl Network {
         }
     }
     /// Checks if a giving Ip address is in the self network
-    pub fn containes(&self, address: &IpAddress) -> bool {
+    pub fn contains(&self, address: &IpAddress) -> bool {
         if IpVersion::is_v4(address.address().as_str()) {
             let octats = address.get_octets().unwrap();
             let netid_octs = self.id.get_octets().unwrap();
             let bcast_octs = self.broadcast.get_octets().unwrap();
             let prefix = self.mask.prefix();
-            if prefix >= 24 {
+            if *prefix >= 24 {
                 octats[3] > netid_octs[3] && octats[3] < bcast_octs[3]
-            } else if prefix >= 16 {
+            } else if *prefix >= 16 {
                 octats[2] <= bcast_octs[2] && octats[3] > netid_octs[3] && octats[3] < bcast_octs[3]
-            } else if prefix >= 8 {
+            } else if *prefix >= 8 {
                 octats[1] <= bcast_octs[1] && octats[3] > netid_octs[3] && octats[3] < bcast_octs[3]
             } else {
                 octats[0] <= bcast_octs[0] && octats[3] > netid_octs[3] && octats[3] < bcast_octs[3]
@@ -785,12 +785,12 @@ impl Network {
         }
     }
     /// getter for the broadcast property
-    pub fn broadcast(&self) -> IpAddress {
-        self.broadcast.clone()
+    pub fn broadcast(&self) -> &IpAddress {
+        &self.broadcast
     }
     /// getter for the netid property
-    pub fn netid(&self) -> IpAddress {
-        self.id.clone()
+    pub fn netid(&self) -> &IpAddress {
+        &self.id
     }
     /// getter for the mask property
     pub fn mask(&self) -> &Mask {
@@ -895,32 +895,32 @@ impl Interface {
         Err(Box::new(InterfaceNotExists))
     }
     /// get interface name attribute
-    pub fn name(&self) -> String {
-        self.name.clone()
+    pub fn name(&self) -> &String {
+        &self.name
     }
     /// get interface index attribute
-    pub fn index(&self) -> u32 {
-        self.index
+    pub fn index(&self) -> &u32 {
+        &self.index
     }
     /// get interface description attribute
-    pub fn description(&self) -> String {
-        self.description.clone()
+    pub fn description(&self) -> &String {
+        &self.description
     }
     /// get mac address attribute
-    pub fn mac(&self) -> Option<MacAddress> {
-        self.mac.clone()
+    pub fn mac(&self) -> &Option<MacAddress> {
+        &self.mac
     }
     /// get ipv4 address attribute
-    pub fn ipv4(&self) -> Option<IpAddress> {
-        self.ipv4.clone()
+    pub fn ipv4(&self) -> &Option<IpAddress> {
+        &self.ipv4
     }
     /// get ipv6 address attribute
-    pub fn ipv6(&self) -> Option<IpAddress> {
-        self.ipv6.clone()
+    pub fn ipv6(&self) -> &Option<IpAddress> {
+        &self.ipv6
     }
     /// get ipv4 subnet mask attribute
-    pub fn mask(&self) -> Option<Mask> {
-        self.mask.clone()
+    pub fn mask(&self) -> &Option<Mask> {
+        &self.mask
     }
     /// convert Interface instance to NetworkInterface instance
     pub fn into(&self) -> Result<NetworkInterface, Box<dyn Error>> {
@@ -935,10 +935,10 @@ impl Interface {
 
 impl Display for Interface {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let mut mac = String::from("None");
-        let mut ipv4 = String::from("None");
-        let mut ipv6 = String::from("None");
-        let mut mask = String::from("None");
+        let mut mac = "None";
+        let mut ipv4 = "None";
+        let mut ipv6 = "None";
+        let mut mask = "None";
         if let Some(addr) = &self.mac {
             mac = addr.address();
         }

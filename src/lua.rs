@@ -1,5 +1,5 @@
 pub mod core_lua;
-
+pub mod luajit;
 use mlua::{FromLua, IntoLua, IntoLuaMulti, Lua, MetaMethod, Result, StdLib, UserData, UserDataMethods, Value};
 use crate::core::{self, *};
 
@@ -20,7 +20,7 @@ pub fn init() -> Result<Lua> {
     Ok(lua)
 }
 
-pub fn run(lua: Lua, code: String) -> Result<()> {
+pub fn run(lua: &Lua, code: String) -> Result<()> {
     lua.load(code).exec()?;
     Ok(())
 }
