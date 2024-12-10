@@ -1,6 +1,6 @@
 # Yrnu
 
-Yrnu is a `Rust` crate that provides simple and easy api for automating network administrators and cyber spaciliest tasks.
+Yrnu is a `Rust` tool providing a simple and easy api via lua for creating automating tools for network administrators and cyber spaciliest tasks.
 > [!NOTE]
 > This project is still in development and not usable yet.
 
@@ -35,12 +35,12 @@ print(IpKind.get_broadcast("10.0.0.0",mask)) -- 10.0.3.255 is version 4 broadcas
 ### Shell Usage
 
 - Opening interactive interpreter: `yrnu`
-- Running a lua file: `yrnu script.lua`
-- Send 5 icmp packets: `yrnu -s icmp -n 5`
-- Sniff the next 10 packets and save them as pcap file: `yrnu -S 10 --save`
-- Start interactive dialog to configure STP remotely: `yrnu -c STP -t 192.168.1.1`
-- Run command remotely (using ssh): `yrnu -r 'whoami'`
-- Start an HTTP server and serve the files under giving directory: `yrnu --server http --dir ./src`
+- Running a lua script: `yrnu script.lua`
+- Send 5 icmp packets to `10.0.0.1` : `yrnu send icmp -n 5 -t 10.0.0.1`
+- Sniff the next 10 packets and save them as pcap file: `yrnu sniff -n 10 -s`
+- Start interactive dialog to configure STP remotely: `yrnu config STP -i`
+- Run command remotely (using ssh): `yrnu config -r 'whoami'`
+- Start an HTTP server and serve the files under giving directory: `yrnu server http -d ./src`
 - etc.
 
 ### Core features
