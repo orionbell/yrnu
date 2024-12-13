@@ -1,6 +1,6 @@
 # Yrnu
 
-Yrnu is a `Rust` tool providing a simple and easy api via lua for creating automating tools for network administrators and cyber spaciliest tasks.
+Yrnu is a `Rust` tool providing a simple and easy api via lua for creating automation tools for network administrators and cyber spaciliest tasks.
 > [!NOTE]
 > This project is still in development and not usable yet.
 
