@@ -93,8 +93,8 @@ fn containes_test() {
     let net1 = Network::from_str("192.168.15.128/28").unwrap();
     let net2 = Network::from_str("10.1.12.0/24").unwrap();
     let addr = IpAddress::new("10.1.12.2").unwrap();
-    assert_eq!(net1.containes(&addr), false);
-    assert_eq!(net2.containes(&addr), true);
+    assert_eq!(net1.contains(&addr), false);
+    assert_eq!(net2.contains(&addr), true);
 }
 
 #[test]
