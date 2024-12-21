@@ -1,7 +1,7 @@
 pub mod core_lua;
 pub mod interpreter;
-use mlua::{FromLua, IntoLua, IntoLuaMulti, Lua, MetaMethod, Result, StdLib, UserData, UserDataMethods, Value};
-use crate::core::{self, *};
+use crate::core::*;
+use mlua::{Lua, Result, StdLib};
 
 trait LuaSetup {
     fn setup(lua: &mlua::Lua) -> Result<()>;

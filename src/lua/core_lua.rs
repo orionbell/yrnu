@@ -1,6 +1,6 @@
 use super::LuaSetup;
 use crate::core::*;
-use mlua::{FromLua, Lua, LuaNativeFn, MetaMethod, Result, UserData, UserDataMethods, Value};
+use mlua::{FromLua, Lua, MetaMethod, Result, UserData, UserDataMethods, Value};
 
 impl FromLua for IpVersion {
     fn from_lua(value: Value, lua: &Lua) -> mlua::Result<Self> {
@@ -171,18 +171,7 @@ impl UserData for IpAddress {
         fields.add_field_method_get("kind", |_, this| Ok(this.kind().to_owned()));
     }
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("get_octets", |_, this, ()| match this.get_octets() {
-            Ok(octs) => Ok(octs),
-            Err(e) => Err(mlua::Error::BadArgument {
-                to: Some("get_octets".to_string()),
-                pos: 1,
-                name: Some("self".to_string()),
-                cause: std::sync::Arc::new(mlua::Error::RuntimeError(format!(
-                    "Invalid Argument for function get_octats: {}",
-                    e
-                ))),
-            }),
-        });
+        methods.add_method("octets", |_, this, ()| Ok(this.octets().clone()));
         methods.add_method("get_expended", |_, this, ()| Ok(this.get_expended()));
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| Ok(format!("{}", this)));
     }
@@ -396,7 +385,7 @@ impl LuaSetup for Network {
                         } else {
                             "mask"
                         },
-                        if IpKind::is_netid(netid.address(), &mask) {
+                        if IpKind::is_netid(&netid.address(), &mask) {
                             netid.address().to_owned()
                         } else {
                             format!("{} for net id {}", mask.mask(), &netid.address())
@@ -452,9 +441,11 @@ impl UserData for MacAddress {
             Ok(this == &other)
         });
         methods.add_meta_method(MetaMethod::Lt, |_, this, other: MacAddress| {
+            println!("{}", this < &other);
             Ok(this < &other)
         });
         methods.add_meta_method(MetaMethod::Le, |_, this, other: MacAddress| {
+            println!("{}", this <= &other);
             Ok(this <= &other)
         });
     }
