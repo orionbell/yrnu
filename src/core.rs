@@ -3,6 +3,7 @@
 //! addresses as well as defining networks and getting local network interfaces info.
 use crate::error::coreerr::*;
 use core::fmt;
+use mlua::FromLua;
 use pnet::datalink::NetworkInterface;
 use pnet::{datalink::interfaces, ipnetwork::IpNetwork};
 use std::{
@@ -13,7 +14,7 @@ use std::{
 
 /// ## MacAddress
 /// `MacAddress` - MAC address struct
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, FromLua)]
 pub struct MacAddress {
     bytes: [u8; 6],
     vendor: String,
@@ -67,7 +68,7 @@ impl MacAddress {
     }
     pub fn address(&self) -> String {
         format!(
-            "{:X}:{:X}:{:X}:{:X}:{:X}:{:X}",
+            "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
             self.bytes[0],
             self.bytes[1],
             self.bytes[2],
@@ -105,7 +106,7 @@ impl PartialOrd for MacAddress {
 
 /// # IpVersion
 /// `IpVersion` - Internet Protocol (IP) versions enum.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, FromLua)]
 pub enum IpVersion {
     V4,
     V6,
@@ -113,7 +114,7 @@ pub enum IpVersion {
 
 /// # IpKind
 /// `IpKind` - Internet Protocols (IP) address types enum.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq,FromLua)]
 pub enum IpKind {
     Public,
     Private,
@@ -130,7 +131,7 @@ pub enum IpKind {
 
 /// # IpAddress
 /// `IpAddress` - Internet Protocol (IP) address (V4/V6) struct
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, FromLua)]
 pub struct IpAddress {
     address: Vec<u8>,
     version: IpVersion,
@@ -139,7 +140,7 @@ pub struct IpAddress {
 
 /// # Mask
 /// `Mask` - CIDR subnet mask struct
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, FromLua)]
 pub struct Mask {
     prefix: u8,
     num_of_hosts: u32,
@@ -147,7 +148,7 @@ pub struct Mask {
 
 /// # Network
 /// `Network` - computer network struct
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, FromLua)]
 pub struct Network {
     id: IpAddress,
     mask: Mask,
@@ -737,19 +738,19 @@ impl Network {
     pub fn from_str(net: &str) -> Result<Network, InvalidNetwork> {
         let networks_items = net.split('/').collect::<Vec<&str>>();
         if networks_items.len() != 2 {
-            return Err(Box::new(InvalidNetwork));
+            return Err(InvalidNetwork);
         }
         let prefix = networks_items[1].parse::<u8>().unwrap_or(0);
         if prefix == 0 {
-            return Err(Box::new(InvalidNetwork));
+            return Err(InvalidNetwork);
         }
         let mask = Mask::from_prefix(prefix);
         if let Ok(mask) = mask {
             if IpKind::is_netid(networks_items[0], &mask) {
-                let netid = IpAddress::new(networks_items[0])?;
+                let netid = IpAddress::new(networks_items[0]).unwrap();
                 return Ok(Network {
                     id: netid.clone(),
-                    broadcast: IpKind::get_broadcast(netid.address().as_str(), &mask)?,
+                    broadcast: IpKind::get_broadcast(netid.address().as_str(), &mask).unwrap(),
                     mask,
                 });
             } else {
@@ -801,7 +802,7 @@ impl Display for Network {
 
 /// # Interface
 /// `Interface` - network interface of the local machine
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, FromLua)]
 pub struct Interface {
     name: String,
     index: u32,
@@ -952,7 +953,7 @@ impl Display for Interface {
             "==== {} ====
 index: {}
 description: {}
-mac: {}
+mac:  {}
 ipv4: {}                
 ipv6: {}
 mask: {}",

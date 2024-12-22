@@ -1,20 +1,7 @@
 use super::LuaSetup;
 use crate::core::*;
-use mlua::{FromLua, Lua, MetaMethod, Result, UserData, UserDataMethods, Value};
+use mlua::{MetaMethod, Result, UserData, UserDataMethods};
 
-impl FromLua for IpVersion {
-    fn from_lua(value: Value, lua: &Lua) -> mlua::Result<Self> {
-        if let Some(value) = value.as_userdata() {
-            let value = value.take::<IpVersion>()?;
-            return Ok(value);
-        }
-        Err(mlua::Error::FromLuaConversionError {
-            from: "table",
-            to: "IpVersion".to_string(),
-            message: Some("convertion failed".to_string()),
-        })
-    }
-}
 impl UserData for IpVersion {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| {
@@ -40,19 +27,6 @@ impl LuaSetup for IpVersion {
     }
 }
 
-impl FromLua for IpKind {
-    fn from_lua(value: Value, lua: &Lua) -> mlua::Result<Self> {
-        if let Some(value) = value.as_userdata() {
-            let value = value.borrow::<IpKind>()?;
-            return Ok(value.clone());
-        }
-        Err(mlua::Error::FromLuaConversionError {
-            from: "table",
-            to: "IpKind".to_string(),
-            message: Some("convertion failed".to_string()),
-        })
-    }
-}
 impl UserData for IpKind {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| {
@@ -151,19 +125,6 @@ impl LuaSetup for IpKind {
     }
 }
 
-impl FromLua for IpAddress {
-    fn from_lua(value: Value, lua: &Lua) -> Result<Self> {
-        if let Some(value) = value.as_userdata() {
-            let value = value.take::<IpAddress>()?;
-            return Ok(value);
-        }
-        Err(mlua::Error::FromLuaConversionError {
-            from: "table",
-            to: "IpAddress".to_string(),
-            message: Some("convertion failed".to_string()),
-        })
-    }
-}
 impl UserData for IpAddress {
     fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
         fields.add_field_method_get("address", |_, this| Ok(this.address().to_owned()));
@@ -242,19 +203,6 @@ impl LuaSetup for IpAddress {
     }
 }
 
-impl FromLua for Mask {
-    fn from_lua(value: Value, lua: &Lua) -> Result<Self> {
-        if let Some(value) = value.as_userdata() {
-            let value = value.take::<Mask>()?;
-            return Ok(value);
-        }
-        Err(mlua::Error::FromLuaConversionError {
-            from: "table",
-            to: "Mask".to_string(),
-            message: Some("convertion failed".to_string()),
-        })
-    }
-}
 impl UserData for Mask {
     fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
         fields.add_field_method_get("mask", |_, this| Ok(this.mask().to_owned()));
@@ -320,19 +268,6 @@ impl LuaSetup for Mask {
     }
 }
 
-impl FromLua for Network {
-    fn from_lua(value: Value, lua: &Lua) -> Result<Self> {
-        if let Some(value) = value.as_userdata() {
-            let value = value.take::<Network>()?;
-            return Ok(value);
-        }
-        Err(mlua::Error::FromLuaConversionError {
-            from: "table",
-            to: "Network".to_string(),
-            message: Some("convertion failed".to_string()),
-        })
-    }
-}
 impl UserData for Network {
     fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
         fields.add_field_method_get("broadcast", |_, this| Ok(this.broadcast().to_owned()));
@@ -416,19 +351,6 @@ impl LuaSetup for Network {
     }
 }
 
-impl FromLua for MacAddress {
-    fn from_lua(value: Value, lua: &Lua) -> Result<Self> {
-        if let Some(value) = value.as_userdata() {
-            let value = value.borrow::<MacAddress>()?;
-            return Ok(value.clone());
-        }
-        Err(mlua::Error::FromLuaConversionError {
-            from: "table",
-            to: "MacAddress".to_string(),
-            message: Some("convertion failed".to_string()),
-        })
-    }
-}
 impl UserData for MacAddress {
     fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
         fields.add_field_method_get("address", |_, this| Ok(this.address()));
@@ -475,19 +397,6 @@ impl LuaSetup for MacAddress {
     }
 }
 
-impl FromLua for Interface {
-    fn from_lua(value: Value, lua: &Lua) -> Result<Self> {
-        if let Some(value) = value.as_userdata() {
-            let value = value.take::<Interface>()?;
-            return Ok(value);
-        }
-        Err(mlua::Error::FromLuaConversionError {
-            from: "table",
-            to: "Interface".to_string(),
-            message: Some("convertion failed".to_string()),
-        })
-    }
-}
 impl UserData for Interface {
     fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
         fields.add_field_method_get("name", |_, this| Ok(this.name().to_owned()));
