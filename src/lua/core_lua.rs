@@ -199,7 +199,7 @@ impl LuaSetup for IpAddress {
             "is_valid",
             lua.create_function(|_, address: String| Ok(IpAddress::is_valid(address.as_str())))?,
         )?;
-        ipaddress_table.set(
+        _ = ipaddress_table.set(
             "expend",
             lua.create_function(
                 |_, address: String| match IpAddress::expend(address.as_str()) {
@@ -216,7 +216,7 @@ impl LuaSetup for IpAddress {
                 },
             )?,
         );
-        ipaddress_table.set(
+        _ = ipaddress_table.set(
             "shorten",
             lua.create_function(
                 |_, address: String| match IpAddress::shorten(address.as_str()) {
@@ -419,8 +419,8 @@ impl LuaSetup for Network {
 impl FromLua for MacAddress {
     fn from_lua(value: Value, lua: &Lua) -> Result<Self> {
         if let Some(value) = value.as_userdata() {
-            let value = value.take::<MacAddress>()?;
-            return Ok(value);
+            let value = value.borrow::<MacAddress>()?;
+            return Ok(value.clone());
         }
         Err(mlua::Error::FromLuaConversionError {
             from: "table",
@@ -431,12 +431,11 @@ impl FromLua for MacAddress {
 }
 impl UserData for MacAddress {
     fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
-        fields.add_field_method_get("address", |_, this| Ok(this.address().to_owned()));
+        fields.add_field_method_get("address", |_, this| Ok(this.address()));
     }
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| Ok(format!("{}", this)));
-        methods.add_method("as_array", |_, this, ()| Ok(this.as_vector()));
-        methods.add_method("as_bytes", |_, this, ()| Ok(this.as_bytes()));
+        methods.add_method("as_bytes", |_, this, ()| Ok(this.as_bytes().to_owned()));
         methods.add_meta_method(MetaMethod::Eq, |_, this, other: MacAddress| {
             Ok(this == &other)
         });
