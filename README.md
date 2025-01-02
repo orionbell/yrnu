@@ -38,7 +38,7 @@ print(IpKind.get_broadcast("10.0.0.0",mask)) -- 10.0.3.255 is version 4 broadcas
 - Running a lua script: `yrnu script.lua`
 - Send 5 icmp packets to `10.0.0.1` : `yrnu send icmp -n 5 -t 10.0.0.1`
 - Sniff the next 10 packets and save them as pcap file: `yrnu sniff -n 10 -s`
-- Start interactive dialog to configure STP remotely: `yrnu config STP -i`
+- Start interactive dialog to configure STP remotely: `yrnu config switch STP -i`
 - Run command remotely (using ssh): `yrnu config -r 'whoami'`
 - Start an HTTP server and serve the files under giving directory: `yrnu server http -d ./src`
 - etc.
