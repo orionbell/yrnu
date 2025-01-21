@@ -75,11 +75,9 @@ fn is_valid_test() {
 #[test]
 fn new_mask_test() {
     let mask = Mask::new("255.255.255.224").unwrap();
-    println!("{:?}",mask);
     assert_eq!(mask.to_string(), "255.255.255.224");
     let mask2 = Mask::from_prefix(24).unwrap();
-    println!("{:?}",mask2);
-    assert_eq!(mask2.to_string(), "255.255.255.0");
+    assert_eq!(mask2.to_string(), "255.255.255.0"); 
 }
 
 // Network tests

@@ -12,7 +12,7 @@ use std::{
     str::FromStr,
 };
 
-/// ## MacAddress
+/// # MacAddress
 /// `MacAddress` - MAC address struct
 #[derive(Debug, Clone, PartialEq, FromLua)]
 pub struct MacAddress {
@@ -20,6 +20,7 @@ pub struct MacAddress {
     vendor: String,
 }
 impl MacAddress {
+    /// Returns the giving mac address vendor
     fn get_vendor(address: &str) -> Result<String, InvalidMacAddress> {
         let index = rsmanuf::Index::new();
         if Self::is_valid(address) {
@@ -39,6 +40,7 @@ impl MacAddress {
     pub fn as_bytes(&self) -> &[u8; 6] {
         &self.bytes
     }
+    /// Converts string mac address into byte array 
     fn get_parts(address: &str) -> Result<[u8; 6], InvalidMacAddress> {
         let parts: Vec<Result<u8, _>> = address
             .split(':')
@@ -57,6 +59,7 @@ impl MacAddress {
         }
         Ok(octets)
     }
+    /// Creates a new MacAddress instance
     pub fn new(address: &str) -> Result<MacAddress, InvalidMacAddress> {
         if MacAddress::is_valid(address) {
             return Ok(MacAddress {
@@ -66,6 +69,7 @@ impl MacAddress {
         }
         Err(InvalidMacAddress)
     }
+    /// Returns the address as a string
     pub fn address(&self) -> String {
         format!(
             "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
@@ -343,7 +347,6 @@ impl IpKind {
             Err(InvalidIpAddress)
         }
     }
-
     pub fn get_broadcast(netid: &str, mask: &Mask) -> Result<IpAddress, InvalidIpAddress> {
         if IpKind::is_netid(netid, mask) {
             let max_hosts = mask.num_of_hosts();
