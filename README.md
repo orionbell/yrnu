@@ -7,7 +7,7 @@ Yrnu is a `Rust` tool providing a simple and easy lua api for creating automatio
 > Currently most of the development is done locally 
 
 ### current program stage
-- [x] core module - Mostly Done
+- [x] core module - Mostly Done ([wiki](https://github.com/orionbell/yrnu/wiki/core))
 - [ ] config module - In Local Development
 - [ ] packet module
 - [ ] server module
