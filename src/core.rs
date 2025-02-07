@@ -40,7 +40,7 @@ impl MacAddress {
     pub fn as_bytes(&self) -> &[u8; 6] {
         &self.bytes
     }
-    /// Converts string mac address into byte array 
+    /// Converts string mac address into byte array
     fn get_parts(address: &str) -> Result<[u8; 6], InvalidMacAddress> {
         let parts: Vec<Result<u8, _>> = address
             .split(':')
@@ -73,6 +73,17 @@ impl MacAddress {
     pub fn address(&self) -> String {
         format!(
             "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+            self.bytes[0],
+            self.bytes[1],
+            self.bytes[2],
+            self.bytes[3],
+            self.bytes[4],
+            self.bytes[5],
+        )
+    }
+    pub fn cisco_format(&self) -> String {
+        format!(
+            "{:02X}{:02X}.{:02X}{:02X}.{:02X}{:02X}",
             self.bytes[0],
             self.bytes[1],
             self.bytes[2],
@@ -118,7 +129,7 @@ pub enum IpVersion {
 
 /// # IpKind
 /// `IpKind` - Internet Protocols (IP) address types enum.
-#[derive(Debug, Clone, PartialEq,FromLua)]
+#[derive(Debug, Clone, PartialEq, FromLua)]
 pub enum IpKind {
     Public,
     Private,
@@ -685,13 +696,21 @@ impl Mask {
         }
         Ok(Mask {
             prefix,
-            num_of_hosts: 2u32.pow(32 - prefix as u32),
+            num_of_hosts: if prefix == 0 {
+                u32::MAX
+            } else {
+                2u32.pow(32 - prefix as u32)
+            },
         })
     }
 
     pub fn mask(&self) -> String {
         let full_bytes: u32 = u32::MAX;
-        let mask_bytes = full_bytes << 32 - self.prefix;
+        let mask_bytes = if self.prefix == 0 {
+            0
+        } else {
+            full_bytes << 32 - self.prefix
+        };
         let octats = mask_bytes.to_ne_bytes();
         format!("{}.{}.{}.{}", octats[3], octats[2], octats[1], octats[0])
     }
@@ -743,8 +762,8 @@ impl Network {
         if networks_items.len() != 2 {
             return Err(InvalidNetwork);
         }
-        let prefix = networks_items[1].parse::<u8>().unwrap_or(0);
-        if prefix == 0 {
+        let prefix = networks_items[1].parse::<u8>().unwrap_or(255);
+        if prefix == 255 {
             return Err(InvalidNetwork);
         }
         let mask = Mask::from_prefix(prefix);
