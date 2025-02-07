@@ -1,9 +1,11 @@
-use clap::{builder, command, value_parser, Arg, ArgAction, Command};
+use clap::{builder, command, value_parser, Arg, ArgAction, ArgGroup, Command};
 use std::error::Error;
 use std::fs::File;
 use std::io::prelude::*;
+use std::str::FromStr;
 use yrnu::config::netdev::router::{
-    Bgp, DistributeType, Eigrp, Interface, Ospf, Rip, Router, RouterConfig,
+    Bgp, DistributeType, Eigrp, EncapsulationType, Interface, Ospf, Rip, Route, Router,
+    RouterConfig, StaticRoute,
 };
 use yrnu::config::netdev::{InterfaceKind, Service};
 use yrnu::config::Config;
@@ -107,15 +109,6 @@ Key features include configuring network settings, sending custom traffic, and d
                                         .short('t')
                                         .long("type")
                                         .help("configure interface type.")
-                                        .value_parser(["gigabit", "fast"])
-                                        .required(true),
-                                )
-                                .arg(
-                                    Arg::new("index")
-                                        .short('i')
-                                        .long("index")
-                                        .help("interface type index.")
-                                        .value_name("INDEX")
                                         .required(true),
                                 )
                                 .arg(
@@ -156,6 +149,32 @@ Key features include configuring network settings, sending custom traffic, and d
                                         .long("mtu")
                                         .value_parser(value_parser!(u16))
                                         .help("configure interface mtu.")
+                                        .required(false),
+                                )
+                                .arg(
+                                    Arg::new("encapsulation")
+                                        .short('e')
+                                        .long("encapsulation")
+                                        .value_parser(["dot1q"])
+                                        .help("configure sub-interface encapsulation type.")
+                                        .required(false),
+                                )
+                                .arg(
+                                    Arg::new("vlan")
+                                        .short('v')
+                                        .long("vlan")
+                                        .value_parser(value_parser!(u16))
+                                        .help("configure encapsulation vlan.")
+                                        .requires("encapsulation")
+                                        .required_if_eq("encapsulation","dot1q"),
+                                )
+                                .arg(
+                                    Arg::new("native")
+                                        .short('n')
+                                        .long("native")
+                                        .action(ArgAction::SetTrue)
+                                        .help("configure encapsulation vlan as native")
+                                        .requires("encapsulation")
                                         .required(false),
                                 ),
                         )
@@ -394,6 +413,33 @@ Key features include configuring network settings, sending custom traffic, and d
                                         .help("configure bgp neighbors.")
                                         .value_delimiter(','),
                                 ),
+                        )
+                        .subcommand(
+                            Command::new("static")
+                                .about("static route configuration.")
+                                .arg(
+                                    Arg::new("destination")
+                                        .short('d')
+                                        .long("destination")
+                                        .help("configure static route destination."),
+                                )
+                                .arg(
+                                    Arg::new("interface")
+                                        .short('i')
+                                        .long("interface")
+                                        .help("configure static route via out interface."),
+                                )
+                                .arg(
+                                    Arg::new("address")
+                                        .short('a')
+                                        .long("address")
+                                        .help("configure static route via next router address."),
+                                )
+                                .group(
+                                    ArgGroup::new("via")
+                                        .args(["address", "interface"])
+                                        .required(true),
+                                ),
                         ),
                 ),
         )
@@ -447,19 +493,18 @@ Key features include configuring network settings, sending custom traffic, and d
                         "{config}{}",
                         match router.subcommand() {
                             Some(("interface", interface)) => {
-                                let indexes = interface
-                                    .get_one::<String>("index")
-                                    .unwrap()
-                                    .split("/")
-                                    .map(|i| i.parse::<u8>().expect("invalid index"))
-                                    .collect::<Vec<u8>>();
-
-                                let mut iface =
-                                    if interface.get_one::<String>("type").unwrap() == "gigabit" {
-                                        Interface::gigabit_ethernet(indexes)
-                                    } else {
-                                        Interface::fast_ethernet(indexes)
-                                    };
+                                let kind = InterfaceKind::from_str(
+                                    interface.get_one::<String>("type").unwrap(),
+                                )
+                                .unwrap_or_else(|_| {
+                                    eprintln!(
+                                        "Invalid interface type {}.",
+                                        interface.get_one::<String>("type").unwrap()
+                                    );
+                                    std::process::exit(-1)
+                                });
+                                let is_sub = kind.is_sub();
+                                let mut iface = Interface::new(kind);
                                 if let Some(ipv4) = interface.get_one::<String>("ipv4") {
                                     let parts = ipv4.split("/").collect::<Vec<&str>>();
                                     let address =
@@ -500,6 +545,16 @@ Key features include configuring network settings, sending custom traffic, and d
                                 }
                                 if let Some(mtu) = interface.get_one::<u16>("mtu") {
                                     iface.mtu(Some(*mtu)).expect("Invalid mtu value");
+                                }
+                                if is_sub {
+                                    if let Some(enc) =
+                                        interface.get_one::<String>("encapsulation")
+                                    {
+                                        let enc = EncapsulationType::from_str(enc).unwrap();
+                                        let vlan: u16 = *interface.get_one("vlan").unwrap();
+                                        let as_native = interface.get_one::<bool>("native").unwrap();
+                                        iface.encapsulation(Some((enc, vlan, *as_native)));
+                                    }
                                 }
                                 iface.config()
                             }
@@ -552,9 +607,9 @@ Key features include configuring network settings, sending custom traffic, and d
                                             })
                                             .collect();
                                         inf = if inf_type == Some("gigabit") {
-                                            InterfaceKind::GigabitEthernet(indexs)
+                                            InterfaceKind::GigabitEthernet(indexs, None)
                                         } else {
-                                            InterfaceKind::FastEthernet(indexs)
+                                            InterfaceKind::FastEthernet(indexs, None)
                                         };
                                         rip.add_passive_if(&inf);
                                     }
@@ -669,9 +724,9 @@ Key features include configuring network settings, sending custom traffic, and d
                                             })
                                             .collect();
                                         inf = if inf_type == Some("gigabit") {
-                                            InterfaceKind::GigabitEthernet(indexs)
+                                            InterfaceKind::GigabitEthernet(indexs, None)
                                         } else {
-                                            InterfaceKind::FastEthernet(indexs)
+                                            InterfaceKind::FastEthernet(indexs, None)
                                         };
                                         ospf.add_passive_if(&inf);
                                     }
@@ -754,9 +809,7 @@ Key features include configuring network settings, sending custom traffic, and d
                                         std::process::exit(-1)
                                     }
                                 }
-                                if let Some(variance) =
-                                    eigrp_args.get_one::<u8>("variance")
-                                {
+                                if let Some(variance) = eigrp_args.get_one::<u8>("variance") {
                                     eigrp.variance(Some(*variance));
                                 }
                                 if let Some(networks) = eigrp_args.get_many::<String>("networks") {
@@ -791,9 +844,9 @@ Key features include configuring network settings, sending custom traffic, and d
                                             })
                                             .collect();
                                         inf = if inf_type == Some("gigabit") {
-                                            InterfaceKind::GigabitEthernet(indexs)
+                                            InterfaceKind::GigabitEthernet(indexs, None)
                                         } else {
-                                            InterfaceKind::FastEthernet(indexs)
+                                            InterfaceKind::FastEthernet(indexs, None)
                                         };
                                         eigrp.add_passive_if(&inf);
                                     }
@@ -845,7 +898,8 @@ Key features include configuring network settings, sending custom traffic, and d
                                         eigrp.add_redistribute_type(&dis_type);
                                     }
                                 }
-                                if let Some(neighbors) = eigrp_args.get_many::<String>("neighbors") {
+                                if let Some(neighbors) = eigrp_args.get_many::<String>("neighbors")
+                                {
                                     for neighbor in neighbors {
                                         if let Ok(neighbor) = IpAddress::new(neighbor) {
                                             eigrp.add_neighbor(&neighbor);
@@ -864,9 +918,7 @@ Key features include configuring network settings, sending custom traffic, and d
                                     if IpVersion::is_v4(router_id) {
                                         if let Ok(router_id) = IpAddress::octets_from_str(router_id)
                                         {
-                                            bgp.router_id(Some(
-                                                router_id[..4].try_into().unwrap(),
-                                            ));
+                                            bgp.router_id(Some(router_id[..4].try_into().unwrap()));
                                         } else {
                                             eprintln!("Invalid argument -router-id {}", router_id);
                                             std::process::exit(-1)
@@ -876,9 +928,7 @@ Key features include configuring network settings, sending custom traffic, and d
                                         std::process::exit(-1)
                                     }
                                 }
-                                if let Some(sync) =
-                                    bgp_args.get_one::<bool>("sync")
-                                {
+                                if let Some(sync) = bgp_args.get_one::<bool>("sync") {
                                     bgp.synchronization(Some(*sync));
                                 }
                                 if let Some(networks) = bgp_args.get_many::<String>("networks") {
@@ -913,16 +963,15 @@ Key features include configuring network settings, sending custom traffic, and d
                                             })
                                             .collect();
                                         inf = if inf_type == Some("gigabit") {
-                                            InterfaceKind::GigabitEthernet(indexs)
+                                            InterfaceKind::GigabitEthernet(indexs, None)
                                         } else {
-                                            InterfaceKind::FastEthernet(indexs)
+                                            InterfaceKind::FastEthernet(indexs, None)
                                         };
                                         bgp.add_passive_if(&inf);
                                     }
                                 }
 
-                                if let Some(dis_types) =
-                                    bgp_args.get_many::<String>("redistribute")
+                                if let Some(dis_types) = bgp_args.get_many::<String>("redistribute")
                                 {
                                     let mut distro;
                                     for dis_type in dis_types {
@@ -978,6 +1027,27 @@ Key features include configuring network settings, sending custom traffic, and d
                                     }
                                 }
                                 bgp.config()
+                            }
+                            Some(("static", static_args)) => {
+                                let dst = Network::from_str(
+                                    if let Some(dst) = static_args.get_one::<String>("destination")
+                                    {
+                                        dst
+                                    } else {
+                                        "0.0.0.0/0"
+                                    },
+                                )
+                                .unwrap_or_else(|_| todo!());
+                                if let Some(address) = static_args.get_one::<String>("address") {
+                                    if let Ok(address) = IpAddress::new(address) {
+                                        Route::Static(dst, StaticRoute::ViaAddress(address))
+                                            .config()
+                                    } else {
+                                        todo!()
+                                    }
+                                } else {
+                                    todo!()
+                                }
                             }
                             _ => {
                                 todo!()

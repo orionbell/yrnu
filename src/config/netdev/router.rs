@@ -6,6 +6,31 @@ use crate::config::Config;
 use crate::core::{IpAddress, IpVersion, MacAddress, Mask, Network};
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
+use std::str::FromStr;
+#[derive(Debug, Clone)]
+pub enum EncapsulationType {
+    Dot1Q,
+}
+impl Display for EncapsulationType {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                EncapsulationType::Dot1Q => "dot1q",
+            }
+        )
+    }
+}
+impl FromStr for EncapsulationType {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "dot1q" => Ok(EncapsulationType::Dot1Q),
+            _ => Err("Invalid encapsulation".to_string()),
+        }
+    }
+}
 /// # Interface
 /// `Interface` - Router Interface struct
 #[derive(Debug, Clone)]
@@ -17,8 +42,10 @@ pub struct Interface {
     state: Option<InterfaceState>,
     speed: Option<u16>,
     delay: Option<u32>,
+    description: Option<String>,
     bandwidth: Option<u32>,
     mtu: Option<u16>,
+    encapsulation: Option<(EncapsulationType, u16, bool)>,
 }
 impl Interface {
     pub fn new(kind: InterfaceKind) -> Self {
@@ -32,13 +59,21 @@ impl Interface {
             delay: None,
             bandwidth: None,
             mtu: None,
+            encapsulation: None,
+            description: None,
         }
     }
     pub fn gigabit_ethernet(indexes: Vec<u8>) -> Self {
-        Interface::new(InterfaceKind::GigabitEthernet(indexes))
+        Interface::new(InterfaceKind::GigabitEthernet(indexes, None))
     }
     pub fn fast_ethernet(indexes: Vec<u8>) -> Self {
-        Interface::new(InterfaceKind::FastEthernet(indexes))
+        Interface::new(InterfaceKind::FastEthernet(indexes, None))
+    }
+    pub fn sub_gigabit_ethernet(indexes: Vec<u8>, ind: u32) -> Self {
+        Interface::new(InterfaceKind::GigabitEthernet(indexes, Some(ind)))
+    }
+    pub fn sub_fast_ethernet(indexes: Vec<u8>, ind: u32) -> Self {
+        Interface::new(InterfaceKind::FastEthernet(indexes, Some(ind)))
     }
     pub fn loopback(index: u8) -> Self {
         Interface::new(InterfaceKind::Lookback(index))
@@ -99,6 +134,10 @@ impl Interface {
         self.mac = mac;
         self
     }
+    pub fn description(&mut self, desc: Option<String>) -> &mut Self {
+        self.description = desc;
+        self
+    }
     pub fn turn_on(&mut self) -> &mut Self {
         Self::state(self, Some(InterfaceState::Up))
     }
@@ -143,36 +182,25 @@ impl Interface {
             Ok(self)
         }
     }
+    pub fn encapsulation(
+        &mut self,
+        enc: Option<(EncapsulationType, u16, bool)>,
+    ) -> Result<&mut Self, Box<dyn Error>> {
+        if self.kind.is_sub() {
+            self.encapsulation = enc;
+            Ok(self)
+        } else {
+            todo!()
+        }
+    }
+    pub fn dot1q(&mut self, vlan: u16, as_native: bool) -> &mut Self {
+        self.encapsulation = Some((EncapsulationType::Dot1Q, vlan, as_native));
+        self
+    }
 }
 impl Display for Interface {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match &self.kind {
-                InterfaceKind::GigabitEthernet(indexes) => {
-                    format!(
-                        "interface GigabitEthernet {}\n",
-                        indexes
-                            .iter()
-                            .map(|i| i.to_string())
-                            .collect::<Vec<String>>()
-                            .join("/")
-                    )
-                }
-                InterfaceKind::FastEthernet(indexes) => {
-                    format!(
-                        "interface GigabitEthernet {}\n",
-                        indexes
-                            .iter()
-                            .map(|i| i.to_string())
-                            .collect::<Vec<String>>()
-                            .join("/")
-                    )
-                }
-                _ => "".to_string(),
-            }
-        )
+        write!(f, "interface {}", self.kind)
     }
 }
 /// # DistributeType
@@ -346,7 +374,6 @@ pub struct Eigrp {
     as_number: u16,
     auto_sum: Option<bool>,
     router_id: Option<[u8; 4]>,
-    default_originate: Option<bool>,
     net: Vec<Network>,
     passive_if: Vec<InterfaceKind>,
     redistribute: Vec<DistributeType>,
@@ -359,7 +386,6 @@ impl Eigrp {
             as_number: as_num,
             auto_sum: None,
             router_id: None,
-            default_originate: None,
             net: vec![],
             passive_if: vec![],
             redistribute: vec![],
@@ -705,25 +731,35 @@ impl Config for Bgp {
         }
     }
 }
+#[derive(Debug, Clone, PartialEq)]
+pub enum StaticRoute {
+    ViaAddress(IpAddress),
+    ViaInterface(InterfaceKind),
+}
 #[derive(Debug, Clone)]
 pub enum Route {
-    StaticViaAddress(Network, IpAddress),
-    StaticViaInterface(Network, InterfaceKind),
+    Static(Network, StaticRoute),
     OSPF(Ospf),
     EIGRP(Eigrp),
     BGP(Bgp),
     RIP(Rip),
 }
-
+impl Route {
+    pub fn default_route(via: StaticRoute) -> Route {
+        Route::Static(Network::from_str("0.0.0.0/0").unwrap(), via)
+    }
+}
 impl Config for Route {
     fn config(&self) -> String {
         match self {
-            Route::StaticViaAddress(dst, via) => {
-                format!("ip route {} {} {}", dst.netid(), dst.mask(), via)
-            }
-            Route::StaticViaInterface(dst, via) => {
-                format!("ip route {} {} {}", dst.netid(), dst.mask(), via)
-            }
+            Route::Static(dst, static_route) => match static_route {
+                StaticRoute::ViaAddress(via) => {
+                    format!("ip route {} {} {}", dst.netid(), dst.mask(), via)
+                }
+                StaticRoute::ViaInterface(via) => {
+                    format!("ip route {} {} {}", dst.netid(), dst.mask(), via)
+                }
+            },
             Route::RIP(rip) => rip.config(),
             Route::OSPF(ospf) => ospf.config(),
             Route::EIGRP(eigrp) => eigrp.config(),
@@ -743,15 +779,10 @@ pub trait RouterConfig {
     fn add_line(&mut self, line: &Self::Line) -> Result<&mut Self, Box<dyn Error>>;
     fn add_interface(&mut self, interface: &Self::Interface) -> Result<&mut Self, Box<dyn Error>>;
     fn enable_ipv6(&mut self, enable: Option<bool>) -> Result<&mut Self, Box<dyn Error>>;
-    fn add_static_router(
+    fn add_static_route(
         &mut self,
-        dst: &Network,
-        via: IpAddress,
-    ) -> Result<&mut Self, Box<dyn Error>>;
-    fn add_static_router_if(
-        &mut self,
-        dst: &Network,
-        via: InterfaceKind,
+        dst: Network,
+        static_route: StaticRoute,
     ) -> Result<&mut Self, Box<dyn Error>>;
 }
 
@@ -810,56 +841,81 @@ impl RouterConfig for Router {
         self.enable_ipv6 = enable;
         Ok(self)
     }
-    fn add_static_router(
+    fn add_static_route(
         &mut self,
-        dst: &Network,
-        via: IpAddress,
+        dst: Network,
+        static_route: StaticRoute,
     ) -> Result<&mut Self, Box<dyn Error>> {
         for route in &self.routes {
-            if let Route::StaticViaAddress(net, addr) = &route {
-                if dst == net && *addr == via {
+            if let Route::Static(net, static_r) = &route {
+                if static_route == *static_r && dst == *net {
                     todo!()
                 }
             }
         }
-        self.routes.push(Route::StaticViaAddress(dst.clone(), via));
-        Ok(self)
-    }
-    fn add_static_router_if(
-        &mut self,
-        dst: &Network,
-        via: InterfaceKind,
-    ) -> Result<&mut Self, Box<dyn Error>> {
-        for route in &self.routes {
-            if let Route::StaticViaInterface(net, inf) = &route {
-                if dst == net && *inf == via {
-                    todo!()
-                }
-            }
-        }
-        self.routes
-            .push(Route::StaticViaInterface(dst.clone(), via));
+        self.routes.push(Route::Static(dst, static_route));
         Ok(self)
     }
 }
 impl Config for Interface {
     fn config(&self) -> String {
+        let mut base_config = String::new();
         let mut config = String::new();
         let enter = self.to_string();
+        let is_sub = self.kind.is_sub();
+        let base_enter = if is_sub {
+            format!("{}\n", enter.split('.').collect::<Vec<&str>>()[0])
+        } else {
+            "".to_string()
+        };
+        if let Some(mac) = &self.mac {
+            if is_sub {
+                base_config = format!("mac-address {}\n", mac.cisco_format())
+            } else {
+                config = format!("mac-address {}\n", mac.cisco_format())
+            }
+        }
+        if let Some(state) = &self.state {
+            if is_sub {
+                base_config = match state {
+                    InterfaceState::Up => format!("{base_config}no shutdown\n"),
+                    InterfaceState::Down => format!("{base_config}shutdown\n"),
+                }
+            } else {
+                config = match state {
+                    InterfaceState::Up => format!("{config}no shutdown\n"),
+                    InterfaceState::Down => format!("{config}shutdown\n"),
+                }
+            }
+        }
+        if let Some(speed) = &self.speed {
+            if is_sub {
+                if *speed == 0 {
+                    base_config = format!("{base_config}speed auto\n");
+                } else {
+                    base_config = format!("{base_config}speed {}\n", speed);
+                }
+            } else {
+                if *speed == 0 {
+                    config = format!("{config}speed auto\n");
+                } else {
+                    config = format!("{config}speed {}\n", speed);
+                }
+            }
+        }
+        if let Some((enc, vlan, as_native)) = &self.encapsulation {
+            config = format!(
+                "{config}encapsulation {} {}{}\n",
+                enc,
+                vlan,
+                if *as_native { " native" } else { "" }
+            );
+        }
         if let Some((address, mask)) = &self.ipv4 {
             config = format!("{config}ip address {} {}\n", address.address(), mask.mask());
         }
         if let Some((address, prefix)) = &self.ipv6 {
             config = format!("{config}ipv6 address {}/{}\n", address.address(), prefix);
-        }
-        if let Some(mac) = &self.mac {
-            config = format!("{config}mac-address {}\n", mac.address())
-        }
-        if let Some(state) = &self.state {
-            match state {
-                InterfaceState::Up => config = format!("{config}no shutdown\n"),
-                InterfaceState::Down => config = format!("{config}shutdown\n"),
-            }
         }
         if let Some(bandwidth) = &self.bandwidth {
             config = format!("{config}bandwidth {}\n", bandwidth);
@@ -870,17 +926,21 @@ impl Config for Interface {
         if let Some(delay) = &self.delay {
             config = format!("{config}delay {}\n", delay);
         }
-        if let Some(speed) = &self.speed {
-            if *speed == 0 {
-                config = format!("{config}speed auto\n");
-            } else {
-                config = format!("{config}speed {}\n", speed);
-            }
-        }
         if config != "" {
-            format!("{enter}{config}exit\n")
+            format!(
+                "{}{enter}\n{config}exit\n",
+                if base_config != "" {
+                    format!("{base_enter}{base_config}exit\n")
+                } else {
+                    "".to_string()
+                }
+            )
         } else {
-            String::new()
+            if base_config != "" {
+                format!("{base_enter}{base_config}exit\n")
+            } else {
+                String::new()
+            }
         }
     }
 }
