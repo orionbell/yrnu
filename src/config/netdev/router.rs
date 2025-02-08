@@ -1,12 +1,11 @@
-use super::{
-    FlowControlType, InterfaceKind, InterfaceState, Line, LineLoginType, LineType, ParityType,
-    Service, TransportType,
-};
+use super::{InterfaceKind, InterfaceState, Line, Service};
 use crate::config::Config;
 use crate::core::{IpAddress, IpVersion, MacAddress, Mask, Network};
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
+/// # EncapsulationType
+/// `EncapsulationType` - Encapsulation types of router sub interface enum
 #[derive(Debug, Clone)]
 pub enum EncapsulationType {
     Dot1Q,
@@ -32,7 +31,7 @@ impl FromStr for EncapsulationType {
     }
 }
 /// # Interface
-/// `Interface` - Router Interface struct
+/// `Interface` - Router Interface config struct
 #[derive(Debug, Clone)]
 pub struct Interface {
     ipv4: Option<(IpAddress, Mask)>,
@@ -48,6 +47,7 @@ pub struct Interface {
     encapsulation: Option<(EncapsulationType, u16, bool)>,
 }
 impl Interface {
+    /// Creates a new instance of router Interface
     pub fn new(kind: InterfaceKind) -> Self {
         Self {
             ipv4: None,
@@ -63,21 +63,27 @@ impl Interface {
             description: None,
         }
     }
+    /// Creates a new Interface instance already configured as GigabitEthernet interface
     pub fn gigabit_ethernet(indexes: Vec<u8>) -> Self {
         Interface::new(InterfaceKind::GigabitEthernet(indexes, None))
     }
+    /// Creates a new Interface instance already configured as FastEthernet interface
     pub fn fast_ethernet(indexes: Vec<u8>) -> Self {
         Interface::new(InterfaceKind::FastEthernet(indexes, None))
     }
+    /// Creates a new sub Interface instance already configured as GigabitEthernet interface
     pub fn sub_gigabit_ethernet(indexes: Vec<u8>, ind: u32) -> Self {
         Interface::new(InterfaceKind::GigabitEthernet(indexes, Some(ind)))
     }
+    /// Creates a new sub Interface instance already configured as FastEthernet interface
     pub fn sub_fast_ethernet(indexes: Vec<u8>, ind: u32) -> Self {
         Interface::new(InterfaceKind::FastEthernet(indexes, Some(ind)))
     }
+    /// Creates a new Interface instance already configured as Loopback interface
     pub fn loopback(index: u8) -> Self {
         Interface::new(InterfaceKind::Lookback(index))
     }
+    /// Configure interface bandwidth
     pub fn bandwidth(&mut self, bandwidth: Option<u32>) -> Result<&mut Self, Box<dyn Error>> {
         if let Some(bandwidth) = bandwidth {
             if bandwidth > 0 && bandwidth <= 10_000_000 {
@@ -91,6 +97,7 @@ impl Interface {
             Ok(self)
         }
     }
+    /// Configure interface delay
     pub fn delay(&mut self, delay: Option<u32>) -> Result<&mut Self, Box<dyn Error>> {
         if let Some(delay) = delay {
             if delay > 0 && delay <= 16_777_215 {
@@ -104,6 +111,7 @@ impl Interface {
             Ok(self)
         }
     }
+    /// Configure interface mtu
     pub fn mtu(&mut self, mtu: Option<u16>) -> Result<&mut Self, Box<dyn Error>> {
         if let Some(mtu) = mtu {
             if mtu >= 64 && mtu <= 1600 {
@@ -117,6 +125,7 @@ impl Interface {
             Ok(self)
         }
     }
+    /// Configure interface speed
     pub fn speed(&mut self, speed: Option<u16>) -> Result<&mut Self, Box<dyn Error>> {
         if let Some(speed) = speed {
             if speed == 0 || speed == 10 || speed == 100 || speed == 1000 {
@@ -130,24 +139,30 @@ impl Interface {
             Ok(self)
         }
     }
+    /// Configure interface mac address
     pub fn mac(&mut self, mac: Option<MacAddress>) -> &mut Self {
         self.mac = mac;
         self
     }
+    /// Configure interface description
     pub fn description(&mut self, desc: Option<String>) -> &mut Self {
         self.description = desc;
         self
     }
+    /// Turn on the interface
     pub fn turn_on(&mut self) -> &mut Self {
         Self::state(self, Some(InterfaceState::Up))
     }
+    /// Turn off the interface
     pub fn shutdown(&mut self) -> &mut Self {
         Self::state(self, Some(InterfaceState::Down))
     }
+    /// Configure interface state
     pub fn state(&mut self, state: Option<InterfaceState>) -> &mut Self {
         self.state = state;
         self
     }
+    /// Configure interface ipv4 address
     pub fn ipv4(
         &mut self,
         address: Option<IpAddress>,
@@ -165,6 +180,7 @@ impl Interface {
             Ok(self)
         }
     }
+    /// Configure interface ipv6 address (this would not enable ipv6 on the router)
     pub fn ipv6(
         &mut self,
         address: Option<IpAddress>,
@@ -182,6 +198,7 @@ impl Interface {
             Ok(self)
         }
     }
+    /// Configure sub interface encapsulation
     pub fn encapsulation(
         &mut self,
         enc: Option<(EncapsulationType, u16, bool)>,
@@ -193,6 +210,7 @@ impl Interface {
             todo!()
         }
     }
+    /// Configure sub interface as Dot1Q
     pub fn dot1q(&mut self, vlan: u16, as_native: bool) -> &mut Self {
         self.encapsulation = Some((EncapsulationType::Dot1Q, vlan, as_native));
         self
@@ -230,8 +248,8 @@ impl Display for DistributeType {
         )
     }
 }
-/// # OSPF
-/// `Ospf` - Ospf protocol struct
+/// # OSPF Configuration
+/// `Ospf` - Ospf protocol config struct
 #[derive(Debug, Clone)]
 pub struct Ospf {
     pid: u32,
@@ -244,6 +262,7 @@ pub struct Ospf {
     ref_bandwidth: Option<u32>,
 }
 impl Ospf {
+    /// Creates a new `Ospf` config instance
     pub fn new(pid: u32) -> Ospf {
         Ospf {
             pid,
@@ -256,14 +275,17 @@ impl Ospf {
             ref_bandwidth: None,
         }
     }
+    /// Configure `OSPF` router id
     pub fn router_id(&mut self, id: Option<[u8; 4]>) -> &mut Self {
         self.router_id = id;
         self
     }
+    /// Configure `OSPF` default originate
     pub fn default_originate(&mut self, def: Option<bool>) -> &mut Self {
         self.default_originate = def;
         self
     }
+    /// Configure `OSPF` reference bandwidth
     pub fn reference_bandwidth(
         &mut self,
         ref_bandwidth: Option<u32>,
@@ -280,6 +302,7 @@ impl Ospf {
             Ok(self)
         }
     }
+    /// Add network to the `OSPF` list of networks to distribute
     pub fn add_network(&mut self, net: &Network) -> &mut Self {
         if self.net.iter().any(|n| n == net) {
             self
@@ -288,10 +311,12 @@ impl Ospf {
             self
         }
     }
+    /// Remove network from the `OSPF` list of networks to distribute
     pub fn remove_network(&mut self, net: &Network) -> &mut Self {
         self.net.retain(|n| n != net);
         self
     }
+    /// Add passive interface to the `OSPF` config
     pub fn add_passive_if(&mut self, inf: &InterfaceKind) -> &mut Self {
         if self.passive_if.iter().any(|i| i == inf) {
             self
@@ -300,10 +325,12 @@ impl Ospf {
             self
         }
     }
+    /// Remove passive interface from the `OSPF` config
     pub fn remove_passive_if(&mut self, inf: &InterfaceKind) -> &mut Self {
         self.passive_if.retain(|i| i != inf);
         self
     }
+    /// Add distribute type to the redistribution list of `OSPF` config
     pub fn add_redistribute_type(&mut self, red: &DistributeType) -> &mut Self {
         if self.redistribute.iter().any(|r| r == red) {
             self
@@ -312,10 +339,12 @@ impl Ospf {
             self
         }
     }
+    /// Remove distribute type from the redistribution list of the `OSPF` config
     pub fn remove_redistribute_type(&mut self, red: &DistributeType) -> &mut Self {
         self.redistribute.retain(|r| r != red);
         self
     }
+    /// Add neighbor to the the neighbors list of the `OSPF` config
     pub fn add_neighbor(&mut self, neighbor: &IpAddress) -> &mut Self {
         if self.neighbors.iter().any(|n| n == neighbor) {
             self
@@ -324,6 +353,7 @@ impl Ospf {
             self
         }
     }
+    /// Remove neighbor from the the neighbors list of the `OSPF` config
     pub fn remove_neighbor(&mut self, neighbor: &IpAddress) -> &mut Self {
         self.neighbors.retain(|n| n != neighbor);
         self
@@ -367,7 +397,7 @@ impl Config for Ospf {
         }
     }
 }
-/// # EIGRP
+/// # EIGRP Configuration
 /// `Eigrp` - Eigrp protocol struct
 #[derive(Debug, Clone)]
 pub struct Eigrp {
@@ -381,6 +411,7 @@ pub struct Eigrp {
     variance: Option<u8>,
 }
 impl Eigrp {
+    /// Creates a new `Eigrp` config instance
     pub fn new(as_num: u16) -> Eigrp {
         Eigrp {
             as_number: as_num,
@@ -393,14 +424,17 @@ impl Eigrp {
             variance: None,
         }
     }
+    /// Configure `Eigrp` router id
     pub fn router_id(&mut self, id: Option<[u8; 4]>) -> &mut Self {
         self.router_id = id;
         self
     }
+    /// Configure `Eigrp` auto summary
     pub fn auto_sum(&mut self, auto_sum: Option<bool>) -> &mut Self {
         self.auto_sum = auto_sum;
         self
     }
+    /// Configure `Eigrp` variance value
     pub fn variance(&mut self, var: Option<u8>) -> Result<&mut Self, Box<dyn Error>> {
         if let Some(var) = var {
             if var > 0 && var == 128 {
@@ -414,6 +448,7 @@ impl Eigrp {
             Ok(self)
         }
     }
+    /// Add network to the `Eigrp` list of networks to distribute
     pub fn add_network(&mut self, net: &Network) -> &mut Self {
         if self.net.iter().any(|n| n == net) {
             self
@@ -422,10 +457,12 @@ impl Eigrp {
             self
         }
     }
+    /// Remove network from the `Eigrp` list of networks to distribute
     pub fn remove_network(&mut self, net: &Network) -> &mut Self {
         self.net.retain(|n| n != net);
         self
     }
+    /// Add passive interface to the `Eigrp` config
     pub fn add_passive_if(&mut self, inf: &InterfaceKind) -> &mut Self {
         if self.passive_if.iter().any(|i| i == inf) {
             self
@@ -434,10 +471,12 @@ impl Eigrp {
             self
         }
     }
+    /// Remove passive interface to the `Eigrp` config
     pub fn remove_passive_if(&mut self, inf: &InterfaceKind) -> &mut Self {
         self.passive_if.retain(|i| i != inf);
         self
     }
+    /// Add distribute type to the redistribution list of `Eigrp` config
     pub fn add_redistribute_type(&mut self, red: &DistributeType) -> &mut Self {
         if self.redistribute.iter().any(|r| r == red) {
             self
@@ -446,10 +485,12 @@ impl Eigrp {
             self
         }
     }
+    /// Add distribute type to the redistribution list of `Eigrp` config
     pub fn remove_redistribute_type(&mut self, red: &DistributeType) -> &mut Self {
         self.redistribute.retain(|r| r != red);
         self
     }
+    /// Add neighbor to the the neighbors list of the `Eigrp` config
     pub fn add_neighbor(&mut self, neighbor: &IpAddress) -> &mut Self {
         if self.neighbors.iter().any(|n| n == neighbor) {
             self
@@ -458,6 +499,7 @@ impl Eigrp {
             self
         }
     }
+    /// Remove neighbor to the the neighbors list of the `Eigrp` config
     pub fn remove_neighbor(&mut self, neighbor: &IpAddress) -> &mut Self {
         self.neighbors.retain(|n| n != neighbor);
         self
@@ -498,7 +540,7 @@ pub enum RipVersion {
     V1,
     V2,
 }
-/// # RIP
+/// # RIP Configuration
 /// `Rip` - Rip protocol struct
 #[derive(Debug, Clone)]
 pub struct Rip {
@@ -510,6 +552,7 @@ pub struct Rip {
     redistribute: Vec<DistributeType>,
 }
 impl Rip {
+    /// Creates a new `Rip` config instance
     pub fn new() -> Rip {
         Rip {
             version: None,
@@ -520,26 +563,32 @@ impl Rip {
             redistribute: vec![],
         }
     }
+    /// Configure `RIP` version
     pub fn version(&mut self, ver: Option<RipVersion>) -> &mut Self {
         self.version = ver;
         self
     }
+    /// Set the `RIP` version to version 1
     pub fn version_1(&mut self) -> &mut Self {
         self.version = Some(RipVersion::V1);
         self
     }
+    /// Set the `RIP` version to version 2
     pub fn version_2(&mut self) -> &mut Self {
         self.version = Some(RipVersion::V2);
         self
     }
+    /// Configure `RIP` default originate
     pub fn default_originate(&mut self, def: Option<bool>) -> &mut Self {
         self.default_originate = def;
         self
     }
+    /// Configure `RIP` auto summary
     pub fn auto_sum(&mut self, auto_sum: Option<bool>) -> &mut Self {
         self.auto_sum = auto_sum;
         self
     }
+    /// Add network to the `RIP` list of networks to distribute
     pub fn add_network(&mut self, net: &Network) -> &mut Self {
         if self.net.iter().any(|n| n == net) {
             self
@@ -548,10 +597,12 @@ impl Rip {
             self
         }
     }
+    /// Remove network to the `RIP` list of networks to distribute
     pub fn remove_network(&mut self, net: &Network) -> &mut Self {
         self.net.retain(|n| n != net);
         self
     }
+    /// Add passive interface to the `RIP` config
     pub fn add_passive_if(&mut self, inf: &InterfaceKind) -> &mut Self {
         if self.passive_if.iter().any(|i| i == inf) {
             self
@@ -560,10 +611,12 @@ impl Rip {
             self
         }
     }
+    /// Remove passive interface to the `RIP` config
     pub fn remove_passive_if(&mut self, inf: &InterfaceKind) -> &mut Self {
         self.passive_if.retain(|i| i != inf);
         self
     }
+    /// Add distribute type to the redistribution list of `RIP` config
     pub fn add_redistribute_type(&mut self, red: &DistributeType) -> &mut Self {
         if self.redistribute.iter().any(|r| r == red) {
             self
@@ -572,6 +625,7 @@ impl Rip {
             self
         }
     }
+    /// Remove distribute type to the redistribution list of `RIP` config
     pub fn remove_redistribute_type(&mut self, red: &DistributeType) -> &mut Self {
         self.redistribute.retain(|r| r != red);
         self
@@ -622,7 +676,7 @@ impl Config for Rip {
         }
     }
 }
-/// #BGP
+/// # BGP Configuration
 /// `Bgp` - Bgp protocol struct
 #[derive(Debug, Clone)]
 pub struct Bgp {
@@ -635,6 +689,7 @@ pub struct Bgp {
     sync: Option<bool>,
 }
 impl Bgp {
+    /// Creates a new `Bgp` config instance
     pub fn new(as_num: u16) -> Bgp {
         Bgp {
             as_number: as_num,
@@ -646,14 +701,17 @@ impl Bgp {
             neighbors: vec![],
         }
     }
+    /// Configure `Bgp` router id
     pub fn router_id(&mut self, id: Option<[u8; 4]>) -> &mut Self {
         self.router_id = id;
         self
     }
+    /// Configure `Bgp` synchronization
     pub fn synchronization(&mut self, sync: Option<bool>) -> &mut Self {
         self.sync = sync;
         self
     }
+    /// Add network to the `Bgp` list of networks to distribute
     pub fn add_network(&mut self, net: &Network) -> &mut Self {
         if self.net.iter().any(|n| n == net) {
             self
@@ -662,10 +720,12 @@ impl Bgp {
             self
         }
     }
+    /// Remove network to the `Bgp` list of networks to distribute
     pub fn remove_network(&mut self, net: &Network) -> &mut Self {
         self.net.retain(|n| n != net);
         self
     }
+    /// Add passive interface to the `Bgp` config
     pub fn add_passive_if(&mut self, inf: &InterfaceKind) -> &mut Self {
         if self.passive_if.iter().any(|i| i == inf) {
             self
@@ -674,10 +734,12 @@ impl Bgp {
             self
         }
     }
+    /// Remove passive interface to the `Bgp` config
     pub fn remove_passive_if(&mut self, inf: &InterfaceKind) -> &mut Self {
         self.passive_if.retain(|i| i != inf);
         self
     }
+    /// Add distribute type to the redistribution list of `Bgp` config
     pub fn add_redistribute_type(&mut self, red: &DistributeType) -> &mut Self {
         if self.redistribute.iter().any(|r| r == red) {
             self
@@ -686,10 +748,12 @@ impl Bgp {
             self
         }
     }
+    /// Remove distribute type to the redistribution list of `Bgp` config
     pub fn remove_redistribute_type(&mut self, red: &DistributeType) -> &mut Self {
         self.redistribute.retain(|r| r != red);
         self
     }
+    /// Add neighbor to the the neighbors list of the `Bgp` config
     pub fn add_neighbor(&mut self, neighbor: &IpAddress) -> &mut Self {
         if self.neighbors.iter().any(|n| n == neighbor) {
             self
@@ -698,6 +762,7 @@ impl Bgp {
             self
         }
     }
+    /// Remove neighbor to the the neighbors list of the `Bgp` config
     pub fn remove_neighbor(&mut self, neighbor: &IpAddress) -> &mut Self {
         self.neighbors.retain(|n| n != neighbor);
         self
@@ -731,11 +796,15 @@ impl Config for Bgp {
         }
     }
 }
+/// # StaticRoute
+/// `StaticRoute` - static route via options enum
 #[derive(Debug, Clone, PartialEq)]
 pub enum StaticRoute {
     ViaAddress(IpAddress),
     ViaInterface(InterfaceKind),
 }
+/// # Route Configuration
+/// `Route` - Network route options enum
 #[derive(Debug, Clone)]
 pub enum Route {
     Static(Network, StaticRoute),
@@ -745,6 +814,7 @@ pub enum Route {
     RIP(Rip),
 }
 impl Route {
+    /// Create a default route
     pub fn default_route(via: StaticRoute) -> Route {
         Route::Static(Network::from_str("0.0.0.0/0").unwrap(), via)
     }
@@ -768,24 +838,127 @@ impl Config for Route {
     }
 }
 
+/// # DHCP pool configuration
+#[derive(Debug, Clone, PartialEq)]
+pub struct DhcpPool {
+    name: String,
+    net: Network,
+    def: Option<IpAddress>,
+    dns: Option<IpAddress>,
+    domain: Option<String>,
+    excluded_addresses: Option<(IpAddress, IpAddress)>,
+}
+impl DhcpPool {
+    /// Creates a new `DhcpPool` configuration instance
+    pub fn new(name: String, net: Network) -> Self {
+        Self {
+            name,
+            net,
+            def: None,
+            dns: None,
+            domain: None,
+            excluded_addresses: None,
+        }
+    }
+    /// Config `DhcpPool` default gateway
+    pub fn default_gateway(&mut self, def: Option<IpAddress>) -> Result<&mut Self, Box<dyn Error>> {
+        if let Some(def) = def {
+            if self.net.contains(&def) {
+                self.def = Some(def);
+                Ok(self)
+            } else {
+                Err(todo!())
+            }
+        } else {
+            self.def = None;
+            Ok(self)
+        }
+    }
+    /// Config `DhcpPool` dns server
+    pub fn dns(&mut self, dns: Option<IpAddress>) -> &mut Self {
+        self.dns = dns;
+        self
+    }
+    /// Config `DhcpPool` domain name
+    pub fn domain(&mut self, domain: Option<String>) -> &mut Self {
+        self.domain = domain;
+        self
+    }
+    /// Config `DhcpPool` excluded addresses range
+    pub fn excluded_addresses(
+        &mut self,
+        low: Option<&IpAddress>,
+        high: Option<&IpAddress>,
+    ) -> Result<&mut Self, Box<dyn Error>> {
+        let low = low.unwrap_or(self.net.netid());
+        let high = high.unwrap_or(self.net.broadcast());
+        if self.net.netid() == low && self.net.broadcast() == high {
+            self.excluded_addresses = None;
+            Ok(self)
+        } else if (self.net.contains(&low) || low == self.net.netid()) && (self.net.contains(&high) || self.net.broadcast() == high){
+            self.excluded_addresses = Some((low.clone(), high.clone()));
+            Ok(self)
+        } else {
+            Err(todo!())
+        }
+    }
+}
+impl Config for DhcpPool {
+    fn config(&self) -> String {
+        let mut config = format!(
+            "ip dhcp pool {}\nnetwork {} {}\n",
+            self.name,
+            self.net.netid(),
+            self.net.mask()
+        );
+        if let Some(def) = &self.def {
+            config = format!("{config}default-router {}\n", def);
+        }
+        if let Some(dns) = &self.dns {
+            config = format!("{config}dns-server {}\n", dns);
+        }
+        if let Some(domain) = &self.domain {
+            config = format!("{config}domain-name {}\n", domain);
+        }
+        if let Some((low, high)) = &self.excluded_addresses {
+            config = format!("{config}exit\nip dhcp excluded-address {} {}\n", low, high);
+        } else {
+            config = format!("{config}exit\n")
+        }
+        config
+    }
+}
+/// # RouterConfig
+/// `RouterConfig` - Router config trait
 pub trait RouterConfig {
     type Interface;
     type Line;
+    /// Configure Router `hostname`
     fn hostname(&mut self, hostname: Option<String>) -> Result<&mut Self, Box<dyn Error>>;
+    /// Configure Router `enable secret`
     fn secret(&mut self, secret: Option<String>) -> Result<&mut Self, Box<dyn Error>>;
+    /// Configure Router `enable password`
     fn password(&mut self, passwd: Option<String>) -> Result<&mut Self, Box<dyn Error>>;
+    /// Add service to the Router config
     fn add_service(&mut self, service: Service) -> Result<&mut Self, Box<dyn Error>>;
+    /// Configure Router `banner motd`
     fn banner(&mut self, banner: Option<String>) -> Result<&mut Self, Box<dyn Error>>;
+    /// Add Line to the Router config
     fn add_line(&mut self, line: &Self::Line) -> Result<&mut Self, Box<dyn Error>>;
+    /// Add Interface to the Router config
     fn add_interface(&mut self, interface: &Self::Interface) -> Result<&mut Self, Box<dyn Error>>;
+    /// Enable Ipv6 routing on the router
     fn enable_ipv6(&mut self, enable: Option<bool>) -> Result<&mut Self, Box<dyn Error>>;
+    /// Add static router to the Router config
     fn add_static_route(
         &mut self,
         dst: Network,
         static_route: StaticRoute,
     ) -> Result<&mut Self, Box<dyn Error>>;
+    /// Add DHCP pool to the Router config
+    fn add_dhcp_pool(&mut self, pool: DhcpPool) -> Result<&mut Self, Box<dyn Error>>;
 }
-
+/// # Router configuration
 #[derive(Default, Debug, Clone)]
 pub struct Router {
     hostname: Option<String>,
@@ -797,6 +970,7 @@ pub struct Router {
     services: Vec<Service>,
     interfaces: Vec<Interface>,
     routes: Vec<Route>,
+    dhcp_pools: Vec<DhcpPool>,
 }
 impl RouterConfig for Router {
     type Interface = Interface;
@@ -854,6 +1028,15 @@ impl RouterConfig for Router {
             }
         }
         self.routes.push(Route::Static(dst, static_route));
+        Ok(self)
+    }
+    fn add_dhcp_pool(&mut self, pool: DhcpPool) -> Result<&mut Self, Box<dyn Error>> {
+        for dhcp_pool in &self.dhcp_pools {
+            if pool == *dhcp_pool {
+                return Err(todo!());
+            }
+        }
+        self.dhcp_pools.push(pool);
         Ok(self)
     }
 }
@@ -965,25 +1148,20 @@ impl Config for Router {
                 if *enable_ipv6 { "" } else { "no " }
             );
         }
-        if self.lines.len() > 0 {
-            for line in &self.lines {
-                config = format!("{config}{}", line.config());
-            }
+        for line in &self.lines {
+            config = format!("{config}{}", line.config());
         }
-        if self.services.len() > 0 {
-            for service in &self.services {
-                config = format!("{config}{}", service.config());
-            }
+        for service in &self.services {
+            config = format!("{config}{}", service.config());
         }
-        if self.interfaces.len() > 0 {
-            for interface in &self.interfaces {
-                config = format!("{config}{}", interface.config());
-            }
+        for interface in &self.interfaces {
+            config = format!("{config}{}", interface.config());
         }
-        if self.routes.len() > 0 {
-            for route in &self.routes {
-                config = format!("{config}{}", route.config())
-            }
+        for route in &self.routes {
+            config = format!("{config}{}", route.config())
+        }
+        for pool in &self.dhcp_pools {
+            config = format!("{config}{}", pool.config())
         }
         config
     }

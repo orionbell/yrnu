@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::str::FromStr;
 use yrnu::config::netdev::router::{
-    Bgp, DistributeType, Eigrp, EncapsulationType, Interface, Ospf, Rip, Route, Router,
+    Bgp, DhcpPool, DistributeType, Eigrp, EncapsulationType, Interface, Ospf, Rip, Route, Router,
     RouterConfig, StaticRoute,
 };
 use yrnu::config::netdev::{InterfaceKind, Service};
@@ -29,7 +29,7 @@ Key features include configuring network settings, sending custom traffic, and d
         .version("0.0.1")
         .subcommand(
             Command::new("config")
-                .about("configure linux/Windows machines or network devices.")
+                .about("configure linux/Windows machines and network devices.")
                 .subcommand(
                     Command::new("router")
                         .about("router configuration")
@@ -166,7 +166,7 @@ Key features include configuring network settings, sending custom traffic, and d
                                         .value_parser(value_parser!(u16))
                                         .help("configure encapsulation vlan.")
                                         .requires("encapsulation")
-                                        .required_if_eq("encapsulation","dot1q"),
+                                        .required_if_eq("encapsulation", "dot1q"),
                                 )
                                 .arg(
                                     Arg::new("native")
@@ -440,6 +440,59 @@ Key features include configuring network settings, sending custom traffic, and d
                                         .args(["address", "interface"])
                                         .required(true),
                                 ),
+                        )
+                        .subcommand(
+                            Command::new("dhcp-pool")
+                                .about("dhcp pool configuration.")
+                                .arg(
+                                    Arg::new("name")
+                                        .short('N')
+                                        .long("name")
+                                        .required(true)
+                                        .help("configure dhcp pool name."),
+                                )
+                                .arg(
+                                    Arg::new("network")
+                                        .short('n')
+                                        .long("network")
+                                        .value_parser(Network::from_str)
+                                        .required(true)
+                                        .help("configure dhcp pool network."),
+                                )
+                                .arg(
+                                    Arg::new("gateway")
+                                        .short('g')
+                                        .long("default-gateway")
+                                        .value_parser(IpAddress::new)
+                                        .help("configure dhcp pool default gateway address."),
+                                )
+                                .arg(
+                                    Arg::new("dns")
+                                        .short('d')
+                                        .long("dns-server")
+                                        .value_parser(IpAddress::new)
+                                        .help("configure dhcp pool dns server address."),
+                                )
+                                .arg(
+                                    Arg::new("domain")
+                                        .short('D')
+                                        .long("domain-name")
+                                        .help("configure dhcp pool domain name."),
+                                )
+                                .arg(
+                                    Arg::new("excluded_low")
+                                        .short('l')
+                                        .long("exclude-low-address")
+                                        .help("configure dhcp pool exclude low address.")
+                                        .value_parser(IpAddress::new),
+                                )
+                                .arg(
+                                    Arg::new("excluded_high")
+                                        .short('H')
+                                        .long("exclude-high-address")
+                                        .help("configure dhcp pool exclude high address.")
+                                        .value_parser(IpAddress::new),
+                                ),
                         ),
                 ),
         )
@@ -547,12 +600,12 @@ Key features include configuring network settings, sending custom traffic, and d
                                     iface.mtu(Some(*mtu)).expect("Invalid mtu value");
                                 }
                                 if is_sub {
-                                    if let Some(enc) =
-                                        interface.get_one::<String>("encapsulation")
+                                    if let Some(enc) = interface.get_one::<String>("encapsulation")
                                     {
                                         let enc = EncapsulationType::from_str(enc).unwrap();
                                         let vlan: u16 = *interface.get_one("vlan").unwrap();
-                                        let as_native = interface.get_one::<bool>("native").unwrap();
+                                        let as_native =
+                                            interface.get_one::<bool>("native").unwrap();
                                         iface.encapsulation(Some((enc, vlan, *as_native)));
                                     }
                                 }
@@ -1048,6 +1101,27 @@ Key features include configuring network settings, sending custom traffic, and d
                                 } else {
                                     todo!()
                                 }
+                            }
+                            Some(("dhcp-pool", pool_args)) => {
+                                let mut pool = DhcpPool::new(
+                                    pool_args.get_one::<String>("name").unwrap().to_owned(),
+                                    pool_args.get_one::<Network>("network").unwrap().to_owned(),
+                                );
+                                if let Some(def) = pool_args.get_one::<IpAddress>("gateway") {
+                                    pool.default_gateway(Some(def.to_owned()));
+                                }
+                                if let Some(dns) = pool_args.get_one::<IpAddress>("dns") {
+                                    pool.dns(Some(dns.to_owned()));
+                                }
+                                if let Some(domain) = pool_args.get_one::<String>("domain") {
+                                    pool.domain(Some(domain.to_owned()));
+                                }
+                                let low = pool_args.get_one::<IpAddress>("excluded_low");
+                                let high = pool_args.get_one::<IpAddress>("excluded_high");
+                                if low.is_some() || high.is_some() {   
+                                    pool.excluded_addresses(low, high);
+                                }
+                                pool.config()
                             }
                             _ => {
                                 todo!()
