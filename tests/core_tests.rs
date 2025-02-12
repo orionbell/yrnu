@@ -76,10 +76,11 @@ fn is_valid_test() {
 fn new_mask_test() {
     let mask = Mask::new("255.255.255.224").unwrap();
     assert_eq!(mask.to_string(), "255.255.255.224");
+    assert_eq!(mask.wildcard(), "0.0.0.31" );
     let mask2 = Mask::from_prefix(24).unwrap();
     assert_eq!(mask2.to_string(), "255.255.255.0"); 
+    assert_eq!(mask2.wildcard(), "0.0.0.255" );
 }
-
 // Network tests
 #[test]
 fn new_network_test() {
@@ -93,6 +94,7 @@ fn new_network_test() {
     let net2 = Network::from_str("192.168.1.32/27").expect("failed");
     let big_net = Network::from_str("10.0.16.0/20").expect("failed");
     let super_big_net = Network::from_str("10.16.0.0/12").expect("failed");
+    let wild_card_net = Network::from_str("0.0.0.0/0").unwrap();
     assert_eq!("192.168.1.16/28", net.to_string());
     assert_eq!("192.168.1.0/28", net1.to_string());
     assert_eq!("192.168.1.32/27", net2.to_string());
@@ -100,6 +102,7 @@ fn new_network_test() {
     assert_eq!(big_net.to_string(), "10.0.16.0/20");
     assert_eq!("10.0.31.255", big_net.broadcast().address());
     assert_eq!(super_big_net.to_string(), "10.16.0.0/12");
+    assert_eq!(wild_card_net.to_string(), "0.0.0.0/0");
     assert_eq!("10.31.255.255", super_big_net.broadcast().address())
 }
 

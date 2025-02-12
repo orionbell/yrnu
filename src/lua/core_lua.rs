@@ -1,4 +1,5 @@
 use super::LuaSetup;
+use std::str::FromStr;
 use crate::core::*;
 use mlua::{MetaMethod, Result, UserData, UserDataMethods};
 

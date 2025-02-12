@@ -9,6 +9,7 @@ use pnet::{datalink::interfaces, ipnetwork::IpNetwork};
 use std::{
     fmt::{Display, Formatter},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    ops::Add,
     str::FromStr,
 };
 
@@ -419,9 +420,9 @@ impl Display for IpKind {
 }
 
 impl IpAddress {
-    const MAX_CLASS_C: u16 = 256;
-    const MAX_CLASS_B: u32 = 65536;
-    const MAX_CLASS_A: u64 = 4294967296;
+    pub const MAX_CLASS_C: u16 = 256;
+    pub const MAX_CLASS_B: u32 = 65536;
+    pub const MAX_CLASS_A: u64 = 4294967296;
     /// checks if a giving address is a valid ip address
     pub fn is_valid(address: &str) -> bool {
         IpVersion::is_v4(address) || IpVersion::is_v6(address)
@@ -715,6 +716,23 @@ impl Mask {
         format!("{}.{}.{}.{}", octats[3], octats[2], octats[1], octats[0])
     }
 
+    pub fn wildcard(&self) -> String {
+        let full_bytes: u32 = u32::MAX;
+        let mask_bytes = if self.prefix == 0 {
+            0
+        } else {
+            full_bytes << 32 - self.prefix
+        };
+        let octats = mask_bytes.to_ne_bytes();
+        format!(
+            "{}.{}.{}.{}",
+            255 - octats[3],
+            255 - octats[2],
+            255 - octats[1],
+            255 - octats[0]
+        )
+    }
+
     pub fn prefix(&self) -> &u8 {
         &self.prefix
     }
@@ -756,32 +774,6 @@ impl Network {
         }
         Err(InvalidNetwork)
     }
-    /// Creates a new network from string slice in the "netid/prefix" format
-    pub fn from_str(net: &str) -> Result<Network, InvalidNetwork> {
-        let networks_items = net.split('/').collect::<Vec<&str>>();
-        if networks_items.len() != 2 {
-            return Err(InvalidNetwork);
-        }
-        let prefix = networks_items[1].parse::<u8>().unwrap_or(255);
-        if prefix == 255 {
-            return Err(InvalidNetwork);
-        }
-        let mask = Mask::from_prefix(prefix);
-        if let Ok(mask) = mask {
-            if IpKind::is_netid(networks_items[0], &mask) {
-                let netid = IpAddress::new(networks_items[0]).unwrap();
-                return Ok(Network {
-                    id: netid.clone(),
-                    broadcast: IpKind::get_broadcast(netid.address().as_str(), &mask).unwrap(),
-                    mask,
-                });
-            } else {
-                return Err(InvalidNetwork);
-            }
-        } else {
-            return Err(InvalidNetwork);
-        }
-    }
     /// Checks if a giving Ip address is in the self network
     pub fn contains(&self, address: &IpAddress) -> bool {
         if IpVersion::is_v4(address.address().as_str()) {
@@ -819,6 +811,35 @@ impl Network {
 impl Display for Network {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{}/{}", self.netid().address(), self.mask().prefix())
+    }
+}
+
+impl FromStr for Network {
+    type Err = InvalidNetwork;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let networks_items = s.split('/').collect::<Vec<&str>>();
+        if networks_items.len() != 2 {
+            return Err(InvalidNetwork);
+        }
+        let prefix = networks_items[1].parse::<u8>().unwrap_or(255);
+        if prefix == 255 {
+            return Err(InvalidNetwork);
+        }
+        let mask = Mask::from_prefix(prefix);
+        if let Ok(mask) = mask {
+            if IpKind::is_netid(networks_items[0], &mask) {
+                let netid = IpAddress::new(networks_items[0]).unwrap();
+                return Ok(Network {
+                    id: netid.clone(),
+                    broadcast: IpKind::get_broadcast(netid.address().as_str(), &mask).unwrap(),
+                    mask,
+                });
+            } else {
+                return Err(InvalidNetwork);
+            }
+        } else {
+            return Err(InvalidNetwork);
+        }
     }
 }
 
