@@ -248,6 +248,47 @@ impl Display for DistributeType {
         )
     }
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum OspfAreaType {
+    Stub(u32),
+    Nss(u32),
+    Tstub(u32),
+    Tnss(u32),
+}
+impl FromStr for OspfAreaType {
+    type Err = Box<dyn Error>;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut slice = s.split(" ");
+        let area = slice.next();
+        if area.is_none() {
+            return Err(todo!());
+        }
+        let area = area.unwrap().parse();
+        if area.is_err() {
+            return Err(todo!());
+        }
+        let area = area.unwrap();
+        let typ = slice.next().unwrap_or("");
+        match typ.to_lowercase().as_str() {
+            "stub" => Ok(Self::Stub(area)),
+            "nss" => Ok(Self::Nss(area)),
+            "tnss" => Ok(Self::Tnss(area)),
+            "tstub" => Ok(Self::Tstub(area)),
+            _ => Err(todo!()),
+        }
+    }
+}
+impl Config for OspfAreaType {
+    fn config(&self) -> String {
+        match self {
+            Self::Stub(area) => format!("{area} stub"),
+            Self::Nss(area) => format!("{area} nssa"),
+            Self::Tstub(area) => format!("{area} stub no-summary"),
+            Self::Tnss(area) => format!("{area} nssa no-summary"),
+        }
+    }
+}
 /// # OSPF Configuration
 /// `Ospf` - Ospf protocol config struct
 #[derive(Debug, Clone)]
@@ -255,11 +296,12 @@ pub struct Ospf {
     pid: u32,
     router_id: Option<[u8; 4]>,
     default_originate: Option<bool>,
-    net: Vec<Network>,
+    net: Vec<(Network, u32)>,
     passive_if: Vec<InterfaceKind>,
     redistribute: Vec<DistributeType>,
     neighbors: Vec<IpAddress>,
     ref_bandwidth: Option<u32>,
+    special_areas: Vec<OspfAreaType>,
 }
 impl Ospf {
     /// Creates a new `Ospf` config instance
@@ -273,6 +315,7 @@ impl Ospf {
             redistribute: vec![],
             neighbors: vec![],
             ref_bandwidth: None,
+            special_areas: vec![],
         }
     }
     /// Configure `OSPF` router id
@@ -303,17 +346,17 @@ impl Ospf {
         }
     }
     /// Add network to the `OSPF` list of networks to distribute
-    pub fn add_network(&mut self, net: &Network) -> &mut Self {
-        if self.net.iter().any(|n| n == net) {
+    pub fn add_network(&mut self, net: &Network, area: u32) -> &mut Self {
+        if self.net.iter().any(|(n, a)| n == net && *a == area) {
             self
         } else {
-            self.net.push(net.clone());
+            self.net.push((net.clone(), area));
             self
         }
     }
     /// Remove network from the `OSPF` list of networks to distribute
-    pub fn remove_network(&mut self, net: &Network) -> &mut Self {
-        self.net.retain(|n| n != net);
+    pub fn remove_network(&mut self, net: &Network, area: u32) -> &mut Self {
+        self.net.retain(|(n, a)| n != net || *a != area);
         self
     }
     /// Add passive interface to the `OSPF` config
@@ -358,6 +401,20 @@ impl Ospf {
         self.neighbors.retain(|n| n != neighbor);
         self
     }
+    /// Add special area to the special areas list in the `OSPF` config
+    pub fn add_special_area(&mut self, kind: &OspfAreaType) -> &mut Self {
+        if self.special_areas.iter().any(|k| k == kind) {
+            self
+        } else {
+            self.special_areas.push(kind.clone());
+            self
+        }
+    }
+    /// Remove special area from the special areas list in `OSPF` config
+    pub fn remove_special_area(&mut self, area: &OspfAreaType) -> &mut Self {
+        self.special_areas.retain(|a| a != area);
+        self
+    }
 }
 impl Config for Ospf {
     fn config(&self) -> String {
@@ -378,8 +435,13 @@ impl Config for Ospf {
                 }
             );
         }
-        for net in &self.net {
-            config = format!("{config}network {}\n", net.netid())
+        for (net, area) in &self.net {
+            config = format!(
+                "{config}network {} {} area {}\n",
+                net.netid(),
+                net.mask().wildcard(),
+                area
+            )
         }
         for inf in &self.passive_if {
             config = format!("{config}passive-interface {}\n", inf)
@@ -389,6 +451,9 @@ impl Config for Ospf {
         }
         for neighbor in &self.neighbors {
             config = format!("{config}neighbor {}\n", neighbor.address())
+        }
+        for area in &self.special_areas {
+            config = format!("{config}area {}\n", area.config());
         }
         if config != "" {
             format!("router ospf {}\n{config}exit\n", self.pid)
@@ -895,7 +960,9 @@ impl DhcpPool {
         if self.net.netid() == low && self.net.broadcast() == high {
             self.excluded_addresses = None;
             Ok(self)
-        } else if (self.net.contains(&low) || low == self.net.netid()) && (self.net.contains(&high) || self.net.broadcast() == high){
+        } else if (self.net.contains(&low) || low == self.net.netid())
+            && (self.net.contains(&high) || self.net.broadcast() == high)
+        {
             self.excluded_addresses = Some((low.clone(), high.clone()));
             Ok(self)
         } else {
@@ -926,6 +993,97 @@ impl Config for DhcpPool {
             config = format!("{config}exit\n")
         }
         config
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Hsrp {
+    group: Option<u16>,
+    interface: InterfaceKind,
+    virtual_address: IpAddress,
+    priority: Option<u8>,
+    preempt: Option<bool>,
+    version: Option<u8>,
+}
+impl Hsrp {
+    pub fn new(inf: InterfaceKind, addr: IpAddress) -> Self {
+        Self {
+            group: None,
+            interface: inf,
+            virtual_address: addr,
+            priority: None,
+            preempt: None,
+            version: None,
+        }
+    }
+    pub fn new_v1(inf: InterfaceKind, addr: IpAddress) -> Self {
+        Self {
+            group: None,
+            interface: inf,
+            virtual_address: addr,
+            priority: None,
+            preempt: None,
+            version: Some(1),
+        }
+    }
+    pub fn new_v2(inf: InterfaceKind, addr: IpAddress) -> Self {
+        Self {
+            group: None,
+            interface: inf,
+            virtual_address: addr,
+            priority: None,
+            preempt: None,
+            version: Some(2),
+        }
+    }
+    pub fn priority(&mut self, priority: Option<u8>) -> &mut Self {
+        self.priority = priority;
+        self
+    }
+    pub fn preempt(&mut self, preempt: Option<bool>) -> &mut Self {
+        self.preempt = preempt;
+        self
+    }
+    pub fn version(&mut self, ver: Option<u8>) -> Result<&mut Self, Box<dyn Error>> {
+        if ver.is_some() && ver.unwrap() > 2 {
+            return Err(todo!())
+        }
+        self.version = ver;
+        Ok(self)
+    }
+    pub fn group(&mut self, group: Option<u16>) -> Result<&mut Self, Box<dyn Error>> {
+        if group.is_some() && group.unwrap() > 4096 {
+            return Err(todo!())
+        }
+        self.group = group;
+        Ok(self)
+    }
+}
+impl Config for Hsrp {
+    fn config(&self) -> String {
+        let mut config = format!("interface {}\n", self.interface);
+        let group = if let Some(group) = self.group {
+            format!("{} ", group)
+        } else {
+            String::new()
+        };
+        if *self.virtual_address.version() == IpVersion::V6 {
+            config = format!("{config}standby {}ipv6\n", group);
+        }
+        config = format!(
+            "{config}standby {}ip {}\n",
+            group, self.virtual_address
+        );
+        if let Some(priority) = self.priority {
+            config = format!("{config}standby {}priority {}\n", group, priority);
+        }
+        if self.preempt.is_some() && self.preempt.unwrap() {
+            config = format!("{config}standby {}preempt\n", group);
+        }
+        if let Some(version) = self.version {
+            config = format!("{config}standby version {}\n", version);
+        }
+        format!("{config}exit")
     }
 }
 /// # RouterConfig

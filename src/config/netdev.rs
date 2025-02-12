@@ -415,7 +415,7 @@ impl FromStr for InterfaceKind {
                     None
                 }
             } else {
-                Some(0)
+                None
             };
             let indexes: Vec<u8> = indexes[0]
                 .split("/")

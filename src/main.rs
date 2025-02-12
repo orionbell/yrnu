@@ -4,8 +4,8 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::str::FromStr;
 use yrnu::config::netdev::router::{
-    Bgp, DhcpPool, DistributeType, Eigrp, EncapsulationType, Interface, Ospf, Rip, Route, Router,
-    RouterConfig, StaticRoute,
+    Bgp, DhcpPool, DistributeType, Eigrp, EncapsulationType, Hsrp, Interface, Ospf, OspfAreaType,
+    Rip, Route, Router, RouterConfig, StaticRoute,
 };
 use yrnu::config::netdev::{InterfaceKind, Service};
 use yrnu::config::Config;
@@ -289,6 +289,13 @@ Key features include configuring network settings, sending custom traffic, and d
                                         .long("reference-bandwidth")
                                         .value_parser(value_parser!(u32))
                                         .help("configure ospf reference bandwidth."),
+                                )
+                                .arg(
+                                    Arg::new("special_areas")
+                                        .short('a')
+                                        .long("special-areas")
+                                        .value_delimiter(',')
+                                        .help("configure ospf special areas."),
                                 ),
                         )
                         .subcommand(
@@ -492,6 +499,53 @@ Key features include configuring network settings, sending custom traffic, and d
                                         .long("exclude-high-address")
                                         .help("configure dhcp pool exclude high address.")
                                         .value_parser(IpAddress::new),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("hsrp")
+                                .about("hsrp configuration.")
+                                .arg(
+                                    Arg::new("interface")
+                                        .short('i')
+                                        .long("interface")
+                                        .required(true)
+                                        .help("configure hsrp interface name."),
+                                )
+                                .arg(
+                                    Arg::new("address")
+                                        .short('a')
+                                        .long("virtual-address")
+                                        .value_parser(IpAddress::new)
+                                        .required(true)
+                                        .help("configure hsrp virtual address."),
+                                )
+                                .arg(
+                                    Arg::new("priority")
+                                        .short('p')
+                                        .long("priority")
+                                        .value_parser(value_parser!(u8))
+                                        .help("configure hsrp interface priority."),
+                                )
+                                .arg(
+                                    Arg::new("group")
+                                        .short('g')
+                                        .long("group")
+                                        .value_parser(value_parser!(u16).range(..4097))
+                                        .help("configure hsrp group number."),
+                                )
+                                .arg(
+                                    Arg::new("preempt")
+                                        .short('P')
+                                        .long("preempt")
+                                        .action(ArgAction::SetTrue)
+                                        .help("configure hsrp as preempt."),
+                                )
+                                .arg(
+                                    Arg::new("version")
+                                        .short('v')
+                                        .long("version")
+                                        .help("configure hsrp version.")
+                                        .value_parser(value_parser!(u8).range(..3)),
                                 ),
                         ),
                 ),
@@ -747,8 +801,18 @@ Key features include configuring network settings, sending custom traffic, and d
                                 }
                                 if let Some(networks) = ospf_args.get_many::<String>("networks") {
                                     for net in networks {
+                                        let mut parts = net.split(" ");
+                                        let net = parts.next().unwrap_or_else(|| {
+                                            eprintln!("Empty network is invalid");
+                                            std::process::exit(-1)
+                                        });
+                                        let area = parts.next().unwrap_or("0");
+                                        let area: u32 = area.parse().unwrap_or_else(|_| {
+                                            eprintln!("{} is an invalid value for area number (should be u32)", area);
+                                            std::process::exit(-1)
+                                        });
                                         if let Ok(network) = Network::from_str(net) {
-                                            ospf.add_network(&network);
+                                            ospf.add_network(&network, area);
                                         } else {
                                             eprintln!("Invalid network {}", net);
                                             std::process::exit(-1)
@@ -837,6 +901,16 @@ Key features include configuring network settings, sending custom traffic, and d
                                             ospf.add_neighbor(&neighbor);
                                         } else {
                                             eprintln!("Invalid neighbor address {}", neighbor);
+                                            std::process::exit(-1)
+                                        }
+                                    }
+                                }
+                                if let Some(areas) = ospf_args.get_many::<String>("special_areas") {
+                                    for area in areas {
+                                        if let Ok(area) = OspfAreaType::from_str(area) {
+                                            ospf.add_special_area(&area);
+                                        } else {
+                                            eprintln!("Invalid area type {}", area);
                                             std::process::exit(-1)
                                         }
                                     }
@@ -1118,10 +1192,46 @@ Key features include configuring network settings, sending custom traffic, and d
                                 }
                                 let low = pool_args.get_one::<IpAddress>("excluded_low");
                                 let high = pool_args.get_one::<IpAddress>("excluded_high");
-                                if low.is_some() || high.is_some() {   
+                                if low.is_some() || high.is_some() {
                                     pool.excluded_addresses(low, high);
                                 }
                                 pool.config()
+                            }
+                            Some(("hsrp", hsrp_args)) => {
+                                let interface = InterfaceKind::from_str(
+                                    hsrp_args.get_one::<String>("interface").unwrap(),
+                                )
+                                .unwrap_or_else(|e| {
+                                    eprintln!("{}.", e);
+                                    std::process::exit(-1)
+                                });
+                                let addr = hsrp_args.get_one::<IpAddress>("address").unwrap();
+                                let version =
+                                    hsrp_args.get_one::<u8>("version").unwrap_or(&(3 as u8));
+                                if *addr.version() == IpVersion::V6 && *version != 2 {
+                                    eprintln!("Hsrp version have to be version 2 to enable Ipv6.");
+                                    std::process::exit(-1)
+                                }
+                                let mut hsrp = Hsrp::new(interface.to_owned(), addr.to_owned());
+                                if *version > 2 {
+                                    eprintln!(
+                                        "Invalid hsrp version {}, possible values are [1,2].",
+                                        version
+                                    );
+                                    std::process::exit(-1)
+                                } else {
+                                    hsrp.version(Some(*version));
+                                }
+                                if let Some(priority) = hsrp_args.get_one::<u8>("priority") {
+                                    hsrp.priority(Some(*priority));
+                                }
+                                if let Some(preempt) = hsrp_args.get_one::<bool>("preempt") {
+                                    hsrp.preempt(Some(*preempt));
+                                }
+                                if let Some(group) = hsrp_args.get_one::<u16>("group") {
+                                    hsrp.group(Some(*group));
+                                }
+                                hsrp.config()
                             }
                             _ => {
                                 todo!()
