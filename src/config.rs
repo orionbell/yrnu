@@ -3,13 +3,6 @@ use ssh2::Session;
 use std::error::Error;
 use std::io::prelude::*;
 use std::path::Path;
-pub mod netdev;
-
-
-
-pub trait Config {
-    fn config(&self) -> String;
-}
 
 pub enum SSHAuthType<'a> {
     Arguments(String, String),
@@ -58,9 +51,8 @@ pub async fn connect(
     Ok(sess)
 }
 
-pub fn run<T: Config>(sess: &Session, config: &T) -> Result<Option<String>, Box<dyn Error>> {
+pub fn run(sess: &Session, config: String) -> Result<Option<String>, Box<dyn Error>> {
     let mut chan = sess.channel_session()?;
-    let config = config.config();
     let mut output = String::new();
     for line in config.lines() {
         chan.exec(line)?;

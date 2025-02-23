@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-clap = { version = "4.5.20", features = ["cargo"] }
+clap = { version = "4.5.20", features = ["cargo", "string"] }
+dirs = "6.0.0"
 mlua = { version = "0.10.1", features = ["luajit52", "macros", "vendored"] }
 pnet = "0.35.0"
 rpassword = "7.3.1"

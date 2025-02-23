@@ -45,7 +45,7 @@ impl Completer for TokenGroups {
 }
 impl Helper for TokenGroups {}
 
-pub fn start_interpreter() -> Result<(), Box<dyn Error>> {
+pub fn start_interpreter(lua: &Lua) -> Result<(), Box<dyn Error>> {
     let token_groups = TokenGroups {
         keywords: vec![
             "local".into(),
@@ -96,10 +96,9 @@ pub fn start_interpreter() -> Result<(), Box<dyn Error>> {
         ],
     };
     let mut rl = rustyline::Editor::<TokenGroups, DefaultHistory>::new().unwrap();
-    let lua = super::init()?;
     rl.set_helper(Some(token_groups));
     if rl.load_history("history").is_err() {
-        //println!("No History to load...");
+        println!("No History to load...");
     } else {
         //println!("Loading commands history");
     }
@@ -129,8 +128,18 @@ pub fn start_interpreter() -> Result<(), Box<dyn Error>> {
                             message,
                             incomplete_input,
                         } if incomplete_input => {
-                            incomplete = true;
-                            continue;
+                            println!("{}", message);
+                            if message.contains("'=' expected near '<eof>'") {
+                                code_lines = code.split("\n").collect::<Vec<&str>>();
+                                code_lines.pop();
+                                code_lines.pop();
+                                code = code_lines.join("\n");
+                                code.push('\n');
+                                eprintln!("{}", message.split(":").last().unwrap_or_default());
+                            } else {
+                                incomplete = true;
+                                continue;
+                            }
                         }
                         mlua::Error::SyntaxError {
                             message,
@@ -145,6 +154,7 @@ pub fn start_interpreter() -> Result<(), Box<dyn Error>> {
                         }
                         _ => {
                             code_lines = code.split("\n").collect::<Vec<&str>>();
+                            code_lines.pop();
                             code_lines.pop();
                             code = code_lines.join("\n");
                             eprintln!("{e}");
