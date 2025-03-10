@@ -1,0 +1,10 @@
+local rtr = router()
+rtr:set_hostname("RTR-NYC-FL1")
+rtr:set_secret("#bestpa$$")
+rtr:set_password("d0ntus3pa44")
+rtr:set_password_enc(true)
+rtr:set_enable_ipv6(true)
+rtr:add_ospf({ pid = 1 })
+rtr.ospf:set_router_id(IpAddress.new("1.1.1.1"))
+print(rtr:config())
+
