@@ -1,7 +1,7 @@
 use super::LuaSetup;
-use std::str::FromStr;
 use crate::core::*;
 use mlua::{MetaMethod, Result, UserData, UserDataMethods};
+use std::str::FromStr;
 
 impl UserData for IpVersion {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
@@ -134,7 +134,17 @@ impl UserData for IpAddress {
     }
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("octets", |_, this, ()| Ok(this.octets().clone()));
-        methods.add_method("get_expended", |_, this, ()| Ok(this.get_expended()));
+        methods.add_method("get_expended", |_, this, ()| match this.get_expended() {
+            Ok(addr) => Ok(addr),
+            Err(_) => Err(mlua::Error::BadArgument {
+                to: Some("IpAddress.get_expended".to_string()),
+                pos: 1,
+                name: Some("address".to_string()),
+                cause: std::sync::Arc::new(mlua::Error::RuntimeError(
+                    "Invalid Argument".to_string(),
+                )),
+            }),
+        });
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| Ok(format!("{}", this)));
     }
 }
@@ -211,6 +221,7 @@ impl UserData for Mask {
         fields.add_field_method_get("num_of_hosts", |_, this| Ok(this.num_of_hosts().to_owned()));
     }
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        methods.add_method("wildcard", |_, this, ()| Ok(this.wildcard()));
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| Ok(format!("{}", this)));
     }
 }
@@ -355,6 +366,7 @@ impl LuaSetup for Network {
 impl UserData for MacAddress {
     fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
         fields.add_field_method_get("address", |_, this| Ok(this.address()));
+        fields.add_field_method_get("vendor", |_, this| Ok(this.vendor().clone()));
     }
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| Ok(format!("{}", this)));
@@ -363,11 +375,9 @@ impl UserData for MacAddress {
             Ok(this == &other)
         });
         methods.add_meta_method(MetaMethod::Lt, |_, this, other: MacAddress| {
-            println!("{}", this < &other);
             Ok(this < &other)
         });
         methods.add_meta_method(MetaMethod::Le, |_, this, other: MacAddress| {
-            println!("{}", this <= &other);
             Ok(this <= &other)
         });
     }

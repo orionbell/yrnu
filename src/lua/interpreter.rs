@@ -108,7 +108,7 @@ pub fn start_interpreter(lua: &Lua) -> Result<(), Box<dyn Error>> {
     let mut prompt;
     loop {
         prompt = if incomplete {
-            "\x1b[1;34m... \x1b[0m"
+            "\x1b[1;34m...\x1b[0m"
         } else {
             "\x1b[1;34m>>> \x1b[0m"
         };
@@ -128,7 +128,6 @@ pub fn start_interpreter(lua: &Lua) -> Result<(), Box<dyn Error>> {
                             message,
                             incomplete_input,
                         } if incomplete_input => {
-                            println!("{}", message);
                             if message.contains("'=' expected near '<eof>'") {
                                 code_lines = code.split("\n").collect::<Vec<&str>>();
                                 code_lines.pop();

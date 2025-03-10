@@ -93,6 +93,9 @@ impl MacAddress {
             self.bytes[5],
         )
     }
+    pub fn vendor(&self) -> &String {
+        &self.vendor
+    }
 }
 impl Display for MacAddress {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
@@ -492,8 +495,8 @@ impl IpAddress {
         &self.address
     }
     /// get the ipv6 address as expended
-    pub fn get_expended(&self) -> String {
-        Self::expend(&self.address()).unwrap()
+    pub fn get_expended(&self) -> Result<String, InvalidIpV6Address> {
+        Self::expend(&self.address())
     }
     // getters for the IpAddress properties
     /// a getter function for the version propertie

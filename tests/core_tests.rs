@@ -1,5 +1,5 @@
 use yrnu::core::{self, Interface, IpAddress, IpKind, IpVersion, MacAddress, Mask, Network};
-
+use std::str::FromStr;
 // IpVersion tests
 #[test]
 fn is_v4_test() {
