@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.5.20", features = ["cargo", "string"] }
 dirs = "6.0.0"
+git2 = "0.20.0"
 mlua = { version = "0.10.1", features = ["luajit52", "macros", "vendored"] }
 pnet = "0.35.0"
 rpassword = "7.3.1"
@@ -13,4 +14,5 @@ rsmanuf = "2024.12.1"
 rustyline = { version = "15.0.0", features = ["with-file-history"] }
 ssh2 = "0.9.4"
 tokio = { version = "1.42.0", features = ["macros", "net", "rt-multi-thread"] }
+url = "2.5.4"
 
