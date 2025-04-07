@@ -49,6 +49,7 @@ print(id.kind)
 print(id.version)
 rtr.ospf:set_router_id(id)
 print(rtr:config())
+yrnu.run("192.168.1.254", rtr:config())
 ```
 Output
 ```
