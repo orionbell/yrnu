@@ -209,6 +209,10 @@ impl LuaSetup for IpAddress {
             "eui64",
             lua.create_function(|_, address: MacAddress| Ok(IpAddress::eui64(&address)))?,
         )?;
+        ipaddress_table.set(
+            "from_domain",
+            lua.create_function(|_, domain: String| Ok(IpAddress::from_domain(&domain)))?,
+        )?;
         let _ = lua.globals().set("IpAddress", ipaddress_table);
         Ok(())
     }

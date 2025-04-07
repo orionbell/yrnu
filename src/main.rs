@@ -592,7 +592,6 @@ fn list(path: &PathBuf, lib: bool) {
         }
     }
 }
-
 fn main() {
     let lua_ctx = lua::init().unwrap_or_else(|e| {
         eprintln!("{}", e);
@@ -603,8 +602,15 @@ fn main() {
         eprintln!("Failed to load plugins: \n{}", e.to_string());
         vec![]
     });
-    let mut config_args =
-        Command::new("config").about("configure linux/Windows machines and network devices.");
+    let mut config_args = Command::new("config")
+        .about("configure linux/Windows machines and network devices.")
+        .arg(
+            Arg::new("interactive")
+                .short('i')
+                .long("interactive")
+                .help("Config in an interactive way by asking for each argument one by one")
+                .action(ArgAction::SetTrue),
+        );
     let args = command!()
         .about(
             "a tool for networking and cyber specialists, 

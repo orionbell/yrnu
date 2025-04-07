@@ -8,8 +8,7 @@ use pnet::datalink::NetworkInterface;
 use pnet::{datalink::interfaces, ipnetwork::IpNetwork};
 use std::{
     fmt::{Display, Formatter},
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
-    ops::Add,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, ToSocketAddrs},
     str::FromStr,
 };
 
@@ -477,6 +476,14 @@ impl IpAddress {
                 }
             }
         }
+    }
+    /// creates a net IpAddress instace for each address in a giving domain
+    pub fn from_domain(domain: &str) -> Vec<IpAddress> {
+        (domain, 0)
+            .to_socket_addrs()
+            .unwrap_or_default()
+            .map(|v| Self::from(&v.ip()))
+            .collect::<Vec<IpAddress>>()
     }
     /// get the octats values of an ip address as u8 vector from giving &str
     pub fn octets_from_str(address: &str) -> Result<Vec<u8>, InvalidIpAddress> {
