@@ -9,6 +9,7 @@ use pnet::{datalink::interfaces, ipnetwork::IpNetwork};
 use std::{
     fmt::{Display, Formatter},
     net::{IpAddr, Ipv4Addr, Ipv6Addr, ToSocketAddrs},
+    path::PathBuf,
     str::FromStr,
 };
 
@@ -695,7 +696,7 @@ impl Mask {
         if Mask::is_valid(mask) {
             return Ok(Mask {
                 prefix,
-                num_of_hosts: (2 as u32).pow(32 - prefix as u32),
+                num_of_hosts: (2 as u32).pow(32 - prefix as u32) - 2,
             });
         }
         Err(InvalidMask)
@@ -1012,5 +1013,20 @@ ipv6: {}
 mask: {}",
             self.name, self.index, self.description, mac, ipv4, ipv6, mask
         )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, FromLua)]
+pub struct Path(pub PathBuf);
+impl Display for Path {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", self.0.display())
+    }
+}
+#[derive(Debug, Clone, PartialEq, FromLua)]
+pub struct Url(pub url::Url);
+impl Display for Url {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }

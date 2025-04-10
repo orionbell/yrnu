@@ -404,6 +404,8 @@ pub fn init() -> Result<Lua> {
     _ = Network::setup(&lua);
     _ = MacAddress::setup(&lua);
     _ = Interface::setup(&lua);
+    _ = Path::setup(&lua);
+    _ = Url::setup(&lua);
     Ok(lua)
 }
 
