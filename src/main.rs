@@ -1,8 +1,9 @@
 use clap::builder;
-use clap::{command, value_parser, Arg, ArgAction, ArgGroup, ArgMatches, Command, ValueEnum};
+use clap::{command, value_parser, Arg, ArgAction, ArgGroup, ArgMatches, Command};
 use git2::FetchOptions;
+use log::{error, info, warn, LevelFilter};
 use mlua::Lua;
-use std::error::Error;
+use std::default::Default;
 use std::fs::{self, File};
 use std::io::prelude::*;
 use std::path::PathBuf;
@@ -10,608 +11,291 @@ use std::str::FromStr;
 use yrnu::core::{IpAddress, MacAddress, Mask, Network};
 use yrnu::lua;
 
-/// Returns a giving string in a green color
-fn success(str: &str) -> String {
-    format!("\x1b[32m{str}\x1b[0m")
+/// The global yrnu #[derive(Debug)]
+#[derive(Debug, Clone, Default)]
+struct Yrnu {
+    pub lua: Lua,
+    pub root: PathBuf,
+    pub plugins: Vec<(String, mlua::Table)>,
+    pub args: Command,
+    pub arg_matches: ArgMatches,
 }
 
-/// Returns a giving string in a red color
-fn error(str: &str) -> String {
-    format!("\x1b[31m{str}\x1b[0m")
-}
-
-/// Handle the cli usage of the plugins
-fn handle_cli_matches(
-    lua: &Lua,
-    matches: &ArgMatches,
-    plugin: &(String, mlua::Table),
-) -> mlua::Result<String> {
-    let (name, table): &(String, mlua::Table) = plugin;
-    if let Some((active_scmd_name, plugin_args)) = matches.subcommand() {
-        if active_scmd_name != name {
-            return Ok(String::new());
-        }
-        let config_table = lua.create_table().unwrap_or_else(|_| {
-            eprintln!("{}", error("Something went wrong..."));
-            std::process::exit(10)
-        });
-        let args = table.get::<mlua::Table>("args");
-        if let Ok(args) = args {
-            let mut arg_name;
-            let mut arg_opts;
-            let mut arg_values;
-            for arg in args.pairs::<String, mlua::Value>() {
-                (arg_name, arg_values) = arg.unwrap_or_else(|_| {
-                    eprintln!("{}", error("Invalid argument definition of args"));
-                    std::process::exit(11)
-                });
-                arg_opts = match arg_values {
-                    mlua::Value::Table(value) => value,
-                    mlua::Value::String(value) => {
-                        let table = lua.create_table()?;
-                        if value.to_str().unwrap().len() == 1 {
-                            table.set("short", value)?;
-                        } else {
-                            table.set("help", value)?;
-                        }
-                        table
-                    }
-                    _ => {
-                        eprintln!("{}",
-                    error(format!("Faild to load argument {}!, value should be either a table or a string", arg_name).as_str())
-                );
-                        continue;
-                    }
-                };
-                let name = arg_name.clone();
-                let update =
-                    arg_opts
-                        .get::<mlua::Function>("update")
-                        .unwrap_or(lua.create_function(
-                            move |_, (this, value): (mlua::Table, mlua::Value)| {
-                                _ = this.set(name.to_owned(), value);
-                                Ok(())
-                            },
-                        )?);
-                match arg_opts
-                    .get::<String>("arg_type")
-                    .unwrap_or_default()
-                    .as_str()
-                {
-                    "bool" | "boolish" => {
-                        let value = plugin_args.get_one::<bool>(&arg_name);
-                        if let Some(value) = value {
-                            _ = update
-                                .call::<(mlua::Table, bool)>((config_table.clone(), value.clone()))
-                        }
-                    }
-                    "int" => {
-                        let value = plugin_args.get_one::<i64>(&arg_name);
-                        if let Some(value) = value {
-                            _ = update.call::<(mlua::Table, mlua::Number)>((
-                                config_table.clone(),
-                                value.clone(),
-                            ))
-                        }
-                    }
-                    "uint" => {
-                        let value = plugin_args.get_one::<u64>(&arg_name);
-                        if let Some(value) = value {
-                            _ = update.call::<(mlua::Table, mlua::Number)>((
-                                config_table.clone(),
-                                value.clone(),
-                            ))
-                        }
-                    }
-                    "real" => {
-                        let value = plugin_args.get_one::<f64>(&arg_name);
-                        if let Some(value) = value {
-                            _ = update.call::<(mlua::Table, mlua::Number)>((
-                                config_table.clone(),
-                                value.clone(),
-                            ))
-                        }
-                    }
-                    "table" => {
-                        let value = plugin_args
-                            .get_many::<String>(&arg_name)
-                            .unwrap_or_default()
-                            .map(|v| v.as_str())
-                            .collect::<Vec<_>>();
-                        _ = update.call::<(mlua::Table, mlua::Table)>((
-                            config_table.clone(),
-                            value.clone(),
-                        ))
-                    }
-                    "nil" => _ = update.call::<mlua::Table>(config_table.clone()),
-                    _ => {
-                        let value = plugin_args.get_one::<String>(&arg_name);
-                        if let Some(value) = value {
-                            _ = update.call::<(mlua::Table, String)>((
-                                config_table.clone(),
-                                value.clone(),
-                            ))
-                        }
-                    }
-                }
-            }
-        }
-        let config_func = table.get::<mlua::Function>("config");
-        let mut config_str = if let Ok(config) = config_func {
-            config.call::<String>(config_table)?
+impl Yrnu {
+    // Handle the creation of plugin argument lua API
+    fn get_arg_lua_function(
+        &self,
+        arg_name: String,
+        arg_options: &mlua::Table,
+    ) -> mlua::Result<mlua::Function> {
+        let update = arg_options.get::<mlua::Function>("update");
+        let arg_type = arg_options.get::<String>("arg_type").unwrap_or_default();
+        let func = if arg_type == "nil" {
+            return Err(mlua::Error::RuntimeError(
+                "Arguments with arg_type = \"nil\" have to implement update function".to_string(),
+            ));
         } else {
-            "".to_string()
+            self.lua
+                .create_function(move |_, (this, value): (mlua::Table, mlua::Value)| {
+                    if let Ok(update) = &update {
+                        match update.call::<()>((this, value)) {
+                            Err(e) => {
+                                println!("{e}");
+                            }
+                            _ => {}
+                        }
+                    } else {
+                        this.set(arg_name.to_owned(), value)?;
+                    }
+                    Ok(())
+                })?
         };
-        let subcmds = table.get::<mlua::Table>("subcommands");
-        if let Ok(subcmds) = subcmds {
-            let mut scmd_name;
-            let mut scmd_opts;
-            let mut subconfig;
-            for subcmd in subcmds.pairs::<String, mlua::Table>() {
-                (scmd_name, scmd_opts) = subcmd?;
-                subconfig = handle_cli_matches(lua, plugin_args, &(scmd_name, scmd_opts));
-                if let Ok(subconfig) = subconfig {
-                    config_str = format!("{config_str}{}", subconfig);
-                }
-            }
-        }
-        return Ok(config_str);
+        Ok(func)
     }
-    Ok("".to_string())
-}
-
-// Handle the creation of plugin argument lua API
-fn handle_lua_api(
-    lua: &Lua,
-    arg_name: String,
-    arg_options: &mlua::Table,
-) -> mlua::Result<mlua::Function> {
-    let update = arg_options.get::<mlua::Function>("update");
-    let arg_type = arg_options.get::<String>("arg_type").unwrap_or_default();
-    let func = if arg_type == "nil" {
-        return Err(mlua::Error::RuntimeError(
-            "Arguments with arg_type = \"nil\" have to implement update function".to_string(),
-        ));
-    } else {
-        lua.create_function(move |_, (this, value): (mlua::Table, mlua::Value)| {
-            if let Ok(update) = &update {
-                match update.call::<()>((this, value)) {
-                    Err(e) => {
-                        println!("{e}");
-                    }
-                    _ => {}
-                }
+    // Handle the creation of plugin argument CLI
+    fn get_arg_clap_cmd(
+        &self,
+        (arg_name, arg_options): (&String, &mlua::Table),
+    ) -> mlua::Result<Arg> {
+        let mut arg = Arg::new(arg_name);
+        if let Ok(required) = arg_options.get::<bool>("required") {
+            arg = arg.required(required);
+        }
+        if let Ok(short) = arg_options.get::<String>("short") {
+            if short.len() == 0 {
+                arg = arg.short(arg_name.chars().next().unwrap())
             } else {
-                this.set(arg_name.to_owned(), value)?;
+                arg = arg.short(short.chars().next().unwrap());
             }
-            Ok(())
-        })?
-    };
-    Ok(func)
-}
-
-// Handle the creation of plugin argument CLI
-fn handle_cli((arg_name, arg_options): (&String, &mlua::Table)) -> mlua::Result<Arg> {
-    let mut arg = Arg::new(arg_name);
-    if let Ok(required) = arg_options.get::<bool>("required") {
-        arg = arg.required(required);
-    }
-    if let Ok(short) = arg_options.get::<String>("short") {
-        if short.len() == 0 {
+        } else {
             arg = arg.short(arg_name.chars().next().unwrap())
-        } else {
-            arg = arg.short(short.chars().next().unwrap());
         }
-    } else {
-        arg = arg.short(arg_name.chars().next().unwrap())
-    }
-    if let Ok(long) = arg_options.get::<String>("long") {
-        if long.len() == 0 {
+        if let Ok(long) = arg_options.get::<String>("long") {
+            if long.len() == 0 {
+                arg = arg.long(arg_name);
+            } else {
+                arg = arg.long(long);
+            }
+        } else {
             arg = arg.long(arg_name);
-        } else {
-            arg = arg.long(long);
         }
-    } else {
-        arg = arg.long(arg_name);
-    }
-    if let Ok(help) = arg_options.get::<String>("help") {
-        arg = arg.help(help);
-    }
-    if let Ok(values) = arg_options.get::<Vec<String>>("possible_values") {
-        arg = arg.value_parser(values.to_owned());
-    }
-    arg = match arg_options
-        .get::<String>("action")
-        .unwrap_or_default()
-        .as_str()
-    {
-        "store-true" => arg.action(ArgAction::SetTrue),
-        "store-false" => arg.action(ArgAction::SetFalse),
-        "store-count" => arg.action(ArgAction::Count),
-        "store-table" => arg.action(ArgAction::Append),
-        _ => match arg_options
-            .get::<String>("arg_type")
+        if let Ok(help) = arg_options.get::<String>("help") {
+            arg = arg.help(help);
+        }
+        if let Ok(values) = arg_options.get::<Vec<String>>("possible_values") {
+            arg = arg.value_parser(values.to_owned());
+        }
+        arg = match arg_options
+            .get::<String>("action")
             .unwrap_or_default()
             .as_str()
         {
-            "bool" => arg.value_parser(builder::BoolValueParser::new()),
-            "path" => arg.value_parser(builder::PathBufValueParser::new()),
-            "int" => {
-                let max = arg_options.get::<i64>("max").unwrap_or(i64::MAX);
-                let min = arg_options.get::<i64>("min").unwrap_or(i64::MIN);
-                arg.allow_negative_numbers(true)
-                    .value_parser(value_parser!(i64).range(min..max))
-            }
-            "uint" => {
-                let max = arg_options.get::<u64>("max").unwrap_or(u64::MAX);
-                let min = arg_options.get::<u64>("min").unwrap_or(u64::MIN);
-                arg.allow_negative_numbers(true)
-                    .value_parser(value_parser!(u64).range(min..max))
-            }
-            "real" => arg
-                .allow_negative_numbers(true)
-                .value_parser(value_parser!(f64)),
-            "boolish" => arg.value_parser(builder::BoolishValueParser::new()),
-            "ip-address" => arg.value_parser(IpAddress::new),
-            "network" => arg.value_parser(Network::from_str),
-            "mask" => arg.value_parser(Mask::new),
-            "mac-address" => arg.value_parser(MacAddress::new),
-            _ => arg,
-        },
-    };
-    Ok(arg)
-}
-
-/// Load a specific plugin
-fn load_plugin(
-    lua: &Lua,
-    plugin: (&String, &mlua::Table),
-) -> mlua::Result<(Command, mlua::Function)> {
-    let (name, table) = plugin;
-    let start_config = table.get("preconfig").unwrap_or("".to_string());
-    let end_config = table.get("postconfig").unwrap_or("".to_string());
-    let mut subcmd = Command::new(name);
-    let args = table.get::<mlua::Table>("args")?;
-    let subcommands = table.get::<mlua::Table>("subcommands");
-    if let Ok(about) = table.get::<String>("about") {
-        subcmd = subcmd.about(about);
-    }
-    let plugin_table = lua.create_table()?;
-    let config_func = table.get::<mlua::Function>("config")?;
-    let config_func = lua.create_function(move |_, this: mlua::Table| {
-        let mut conf = start_config.clone();
-        conf = conf + &config_func.call::<String>(this)?;
-        conf = conf + &end_config;
-        Ok(conf)
-    })?;
-    plugin_table.set("config", config_func)?;
-    let mut arg;
-    let mut func;
-    let mut arg_name;
-    let mut arg_opts;
-    let mut arg_values;
-    for pair in args.pairs::<String, mlua::Value>() {
-        (arg_name, arg_values) = pair?;
-        arg_opts = match arg_values {
-            mlua::Value::Table(value) => value,
-            mlua::Value::String(value) => {
-                let table = lua.create_table()?;
-                if value.to_str().unwrap().len() == 1 {
-                    table.set("short", value)?;
-                } else {
-                    table.set("help", value)?;
+            "store-true" => arg.action(ArgAction::SetTrue),
+            "store-false" => arg.action(ArgAction::SetFalse),
+            "store-count" => arg.action(ArgAction::Count),
+            "store-table" => arg.action(ArgAction::Append),
+            _ => match arg_options
+                .get::<String>("arg_type")
+                .unwrap_or_default()
+                .as_str()
+            {
+                "bool" => arg.value_parser(builder::BoolValueParser::new()),
+                "path" => arg.value_parser(builder::PathBufValueParser::new()),
+                "int" => {
+                    let max = arg_options.get::<i64>("max").unwrap_or(i64::MAX);
+                    let min = arg_options.get::<i64>("min").unwrap_or(i64::MIN);
+                    arg.allow_negative_numbers(true)
+                        .value_parser(value_parser!(i64).range(min..max))
                 }
-                table
-            }
-            _ => {
-                eprintln!("{}",
-                    error(format!("Faild to load argument {}!, value should be either a table, string or nil", arg_name).as_str())
-                );
-                continue;
-            }
+                "uint" => {
+                    let max = arg_options.get::<u64>("max").unwrap_or(u64::MAX);
+                    let min = arg_options.get::<u64>("min").unwrap_or(u64::MIN);
+                    arg.allow_negative_numbers(true)
+                        .value_parser(value_parser!(u64).range(min..max))
+                }
+                "real" => arg
+                    .allow_negative_numbers(true)
+                    .value_parser(value_parser!(f64)),
+                "boolish" => arg.value_parser(builder::BoolishValueParser::new()),
+                "ip-address" => arg.value_parser(IpAddress::new),
+                "network" => arg.value_parser(Network::from_str),
+                "mask" => arg.value_parser(Mask::new),
+                "mac-address" => arg.value_parser(MacAddress::new),
+                _ => arg,
+            },
         };
-        arg = handle_cli((&arg_name, &arg_opts))?;
-        subcmd = subcmd.arg(arg);
-        func = handle_lua_api(lua, arg_name.clone(), &arg_opts)?;
-        plugin_table.set(format!("set_{}", arg_name), func)?;
+        Ok(arg)
     }
-    let mut scmd_name;
-    let mut scmd_table;
-    if let Ok(subcommands) = subcommands {
-        for pair in subcommands.pairs::<String, mlua::Table>() {
-            (scmd_name, scmd_table) = pair?;
-            let name_clone = scmd_name.clone();
-            if let Ok((scmd, constructor)) = load_plugin(lua, (&scmd_name, &scmd_table)) {
-                let construct = lua.create_function(
-                    move |_, (this, param): (mlua::Table, Option<mlua::Table>)| {
-                        this.set(
-                            name_clone.to_owned(),
-                            constructor.call::<Option<mlua::Table>>(param)?,
-                        )?;
-                        Ok(())
-                    },
-                )?;
-                plugin_table.set(format!("add_{}", scmd_name), construct)?;
-                subcmd = subcmd.subcommand(scmd);
-            } else {
-                eprintln!(
-                    "{}",
-                    error(format!("\x1b[31mFaild to load {} plugin\x1b[0m", scmd_name).as_str())
-                );
-            }
+    // Loads a specific plugin
+    fn load_plugin(
+        &self,
+        name: &String,
+        table: &mlua::Table,
+        plugin_name: &String,
+    ) -> mlua::Result<(Command, mlua::Function)> {
+        let start_config = table.get("preconfig").unwrap_or("".to_string());
+        let end_config = table.get("postconfig").unwrap_or("".to_string());
+        let mut subcmd = Command::new(name);
+        let args = table.get::<mlua::Table>("args")?;
+        let subcommands = table.get::<mlua::Table>("subcommands");
+        if let Ok(about) = table.get::<String>("about") {
+            subcmd = subcmd.about(about);
         }
-    }
-    let init_func = if let Ok(init) = table.get::<mlua::Function>("init") {
-        lua.create_function(move |_, param: Option<mlua::Table>| {
-            init.call::<Option<mlua::Table>>((plugin_table.clone(), param))
-        })
-    } else {
-        lua.create_function(move |_, ()| Ok(plugin_table.clone()))
-    };
-    lua.globals().set(name.to_owned(), init_func.to_owned()?)?;
-    //println!("{} load {} plugin !", success("Successfuly"), name);
-    Ok((subcmd, init_func?))
-}
-
-/// Gets and installs all the plugins that been specified in the init.lua file
-fn load_plugins(lua: &Lua, path: &mut PathBuf) -> mlua::Result<Vec<(String, mlua::Table)>> {
-    let file = path.join("init.lua");
-    if file.is_file() {
-        lua.load(format!(
-            "package.path = package.path .. \";{}/?.lua\"",
-            path.display()
-        ))
-        .exec()?;
-        let init = lua
-            .load(std::fs::read_to_string(file)?)
-            .eval::<mlua::Table>()?;
-        let ensure_installed = init
-            .get::<mlua::Table>("ensure_installed")
-            .unwrap_or(lua.create_table()?);
-        if !ensure_installed.is_empty() {
-            let mut username;
-            let mut repo;
-            let mut inner_repo;
-            let mut inner_username;
-            let mut plugins_path = path.clone();
-            plugins_path.push("plugins");
-            if !plugins_path.is_dir() {
-                _ = std::fs::create_dir_all(plugins_path.clone());
-            }
-            for pair in ensure_installed.pairs::<mlua::Value, mlua::Value>() {
-                (username, repo) = pair?;
-                match (username, repo) {
-                    (mlua::Value::String(value), mlua::Value::Table(table)) => {
-                        for link in table.pairs::<mlua::Value, String>() {
-                            (_, inner_repo) = link?;
-                            inner_username = value.to_str().unwrap();
-                            inner_repo = format!("{inner_username}/{inner_repo}");
-                            clone_plugin(&inner_repo, &mut plugins_path, false);
-                        }
+        let plugin_table = self.lua.create_table()?;
+        let config_func = table.get::<mlua::Function>("config")?;
+        let config_func = self.lua.create_function(move |_, this: mlua::Table| {
+            let mut conf = start_config.clone();
+            conf = conf + &config_func.call::<String>(this)?;
+            conf = conf + &end_config;
+            Ok(conf)
+        })?;
+        plugin_table.set("config", config_func)?;
+        let mut arg;
+        let mut func;
+        let mut arg_name;
+        let mut arg_opts;
+        let mut arg_values;
+        for pair in args.pairs::<String, mlua::Value>() {
+            (arg_name, arg_values) = pair?;
+            arg_opts = match arg_values {
+                mlua::Value::Table(value) => value,
+                mlua::Value::String(value) => {
+                    let table = self.lua.create_table()?;
+                    if value.to_str().unwrap().len() == 1 {
+                        table.set("short", value)?;
+                    } else {
+                        table.set("help", value)?;
                     }
-                    (mlua::Value::String(username), mlua::Value::String(repo)) => {
-                        inner_username = username.to_str().unwrap();
-                        let inner_repo = repo.to_str().unwrap();
-                        clone_plugin(
-                            &format!("{inner_username}/{inner_repo}"),
-                            &mut plugins_path,
-                            false,
-                        );
-                    }
-                    (_, mlua::Value::String(link)) => {
-                        clone_plugin(&link.to_str().unwrap(), &mut plugins_path, false);
-                    }
-                    _ => continue,
+                    table
+                }
+                _ => {
+                    error!(
+                        "Faild to load argument {}!, value should be either a table, string or nil",
+                        arg_name
+                    );
+                    continue;
+                }
+            };
+            arg = self.get_arg_clap_cmd((&arg_name, &arg_opts))?;
+            subcmd = subcmd.arg(arg);
+            func = self.get_arg_lua_function(arg_name.clone(), &arg_opts)?;
+            plugin_table.set(format!("set_{}", arg_name), func)?;
+        }
+        let mut scmd_name;
+        let mut scmd_table;
+        if let Ok(subcommands) = subcommands {
+            for pair in subcommands.pairs::<String, mlua::Table>() {
+                (scmd_name, scmd_table) = pair?;
+                let name_clone = scmd_name.clone();
+                if let Ok((scmd, constructor)) =
+                    self.load_plugin(&scmd_name, &scmd_table, &plugin_name)
+                {
+                    let construct = self.lua.create_function(
+                        move |_, (this, param): (mlua::Table, Option<mlua::Table>)| {
+                            this.set(
+                                name_clone.to_owned(),
+                                constructor.call::<Option<mlua::Table>>(param)?,
+                            )?;
+                            Ok(())
+                        },
+                    )?;
+                    plugin_table.set(format!("add_{}", scmd_name), construct)?;
+                    subcmd = subcmd.subcommand(scmd);
+                } else {
+                    error!(
+                        "Faild to load {} subcommand of {} plugin",
+                        scmd_name, plugin_name
+                    );
                 }
             }
         }
-        let plugins = init
-            .get::<mlua::Table>("plugins")
-            .unwrap_or(lua.create_table()?);
-        if plugins.is_empty() {
-            println!("No plugins to load");
-            Ok(vec![])
-        } else {
-            let mut plugin_list = vec![];
-            for plugin in plugins.pairs::<String, mlua::Table>() {
-                let (name, table) = plugin?;
-                plugin_list.push((name, table));
-            }
-            Ok(plugin_list)
-        }
-    } else {
-        println!("No plugins to load");
-        Ok(vec![])
-    }
-}
-
-/// Setup the plugin directory path
-fn setup() -> PathBuf {
-    let mut path = match std::env::var("YRNU_CONFIG_DIR") {
-        Ok(path) => PathBuf::from(path),
-        Err(_) => dirs::config_dir().unwrap_or_else(|| {
-            eprintln!("Error: Unable to find config folder");
-            std::process::exit(1);
-        }),
-    };
-    path.push("yrnu");
-    if !path.is_dir() {
-        _ = std::fs::create_dir_all(path.clone());
-    }
-    path
-}
-
-/// Clone a remote plugin using https (todo ssh)
-fn clone_plugin(link: &str, plugin_dir: &mut PathBuf, force: bool) -> String {
-    let url_link = url::Url::parse(link).unwrap_or_else(|e| {
-        if link.split("/").count() == 2 {
-            url::Url::parse(&format!("https://github.com/{link}")).unwrap_or_else(|e| {
-                eprintln!("Invalid URL: {link}\nError: {e}");
-                std::process::exit(1)
-            })
-        } else {
-            eprintln!("Invalid URL: {link}\nError: {e}");
-            std::process::exit(1)
-        }
-    });
-    let mut plugin_name = url_link
-        .path_segments()
-        .into_iter()
-        .last()
-        .unwrap()
-        .map(|s| format!("{s}/"))
-        .collect::<String>();
-    plugin_name.pop();
-    if plugin_name.ends_with(".git") {
-        plugin_name = plugin_name[..plugin_name.len() - 4].to_owned();
-    }
-    plugin_name = plugin_name.replace("-", "_").replace("/", "-");
-    plugin_dir.push(&plugin_name);
-    if !plugin_dir.is_dir() {
-        _ = std::fs::create_dir_all(plugin_dir.clone());
-    } else if let Ok(entries) = fs::read_dir(&plugin_dir) {
-        if entries.into_iter().count() > 0 && !force {
-            eprintln!("The plugin directory is installed and is not empty! use \"-f\" to force");
-            std::process::exit(1)
-        } else if force {
-            _ = std::fs::remove_dir_all(plugin_dir.clone());
-            _ = std::fs::create_dir_all(plugin_dir.clone());
-        }
-    }
-    let mut builder = git2::build::RepoBuilder::new();
-    let mut fo = FetchOptions::new();
-    fo.depth(1);
-    builder.fetch_options(fo);
-    if let Err(e) = builder.clone(url_link.as_str(), plugin_dir) {
-        if e.code() != git2::ErrorCode::Exists {
-            if e.class() == git2::ErrorClass::Http {
-                _ = builder.clone(link, plugin_dir).unwrap_or_else(|e| {
-                    eprintln!("Failed cloning plugin repo: {e}");
-                    std::process::exit(1);
+        let init_func = if let Ok(init) = table.get::<mlua::Function>("init") {
+            self.lua
+                .create_function(move |_, param: Option<mlua::Table>| {
+                    init.call::<Option<mlua::Table>>((plugin_table.clone(), param))
                 })
-            } else if e.class() == git2::ErrorClass::Net {
-                eprintln!("Network error: {}", e.message());
-                std::process::exit(1);
+        } else {
+            self.lua
+                .create_function(move |_, ()| Ok(plugin_table.clone()))
+        };
+        self.lua
+            .globals()
+            .set(name.to_owned(), init_func.to_owned()?)?;
+        Ok((subcmd, init_func?))
+    }
+    // Read the plugins from the disk
+    fn read_plugins(&mut self) -> mlua::Result<()> {
+        let file = self.root.join("init.lua");
+        if file.is_file() {
+            self.lua
+                .load(format!(
+                    "package.path = package.path .. \";{}/?.lua\"",
+                    self.root.display()
+                ))
+                .exec()?;
+            let init = self
+                .lua
+                .load(std::fs::read_to_string(file)?)
+                .eval::<mlua::Table>()?;
+            let ensure_installed = init
+                .get::<mlua::Table>("ensure_installed")
+                .unwrap_or(self.lua.create_table()?);
+            if !ensure_installed.is_empty() {
+                let mut username;
+                let mut repo;
+                let mut inner_repo;
+                let mut inner_username;
+                let mut plugins_path = self.root.clone();
+                plugins_path.push("plugins");
+                if !plugins_path.is_dir() {
+                    _ = std::fs::create_dir_all(plugins_path.clone());
+                }
+                for pair in ensure_installed.pairs::<mlua::Value, mlua::Value>() {
+                    (username, repo) = pair?;
+                    match (username, repo) {
+                        (mlua::Value::String(value), mlua::Value::Table(table)) => {
+                            for link in table.pairs::<mlua::Value, String>() {
+                                (_, inner_repo) = link?;
+                                inner_username = value.to_str().unwrap();
+                                inner_repo = format!("{inner_username}/{inner_repo}");
+                                Yrnu::clone_plugin(&inner_repo, &mut plugins_path, false);
+                            }
+                        }
+                        (mlua::Value::String(username), mlua::Value::String(repo)) => {
+                            inner_username = username.to_str().unwrap();
+                            let inner_repo = repo.to_str().unwrap();
+                            Yrnu::clone_plugin(
+                                &format!("{inner_username}/{inner_repo}"),
+                                &mut plugins_path,
+                                false,
+                            );
+                        }
+                        (_, mlua::Value::String(link)) => {
+                            Yrnu::clone_plugin(&link.to_str().unwrap(), &mut plugins_path, false);
+                        }
+                        _ => continue,
+                    }
+                }
+            }
+            let plugins = init
+                .get::<mlua::Table>("plugins")
+                .unwrap_or(self.lua.create_table()?);
+            if plugins.is_empty() {
+                Ok(())
             } else {
-                eprintln!("Failed cloning plugin repo: {e}");
-                std::process::exit(1);
+                for plugin in plugins.pairs::<String, mlua::Table>() {
+                    let (name, table) = plugin?;
+                    self.plugins.push((name, table));
+                }
+                Ok(())
             }
-        }
-    };
-    plugin_name
-}
-
-/// Clone a local directory that contains a plugin to the plugin directory
-fn clone_local_plugin(src: &PathBuf, plugin_dir: &PathBuf, force: bool, mov: bool) -> String {
-    let name = src.file_name().unwrap_or_else(|| {
-        eprintln!("Invalid path: {}", src.to_str().unwrap_or_default());
-        std::process::exit(1);
-    });
-    let plugin_dir = plugin_dir.join(name);
-    if !plugin_dir.is_dir() {
-        _ = std::fs::create_dir_all(plugin_dir.clone());
-    } else if let Ok(entries) = fs::read_dir(&plugin_dir) {
-        if entries.into_iter().count() > 0 && !force {
-            eprintln!("The plugin directory is installed and is not empty! use \"-f\" to force");
-            std::process::exit(1)
+        } else {
+            Ok(())
         }
     }
-    if let Ok(entries) = fs::read_dir(src) {
-        let mut entry;
-        let mut entry_path;
-        let mut entry_name;
-        let mut entry_typ;
-        for entry_res in entries {
-            entry = entry_res.unwrap();
-            entry_path = entry.path();
-            entry_typ = entry.file_type().unwrap_or_else(|e| {
-                eprintln!("Something went wrong.\nError: {}", e);
-                std::process::exit(1);
-            });
-            entry_name = entry.file_name();
-            if entry_typ.is_dir() {
-                _ = clone_local_plugin(&entry_path, &plugin_dir, force, mov);
-                _ = fs::remove_dir(&entry_path);
-            } else {
-                _ = fs::copy(&entry_path, plugin_dir.join(entry_name));
-                _ = fs::remove_file(&entry_path);
-            }
-        }
-        if mov {}
-    }
-    name.to_str()
-        .unwrap_or_else(|| {
-            eprintln!("Invalid path: {}", src.to_str().unwrap_or_default());
-            std::process::exit(1);
-        })
-        .to_owned()
-}
-
-/// Reads a lua script and returns its content
-fn read_script(name: String) -> Result<String, Box<dyn Error>> {
-    let mut file = File::open(name)?;
-    let mut content = String::new();
-    file.read_to_string(&mut content)?;
-    Ok(content)
-}
-
-/// Prints all the plugins that currently installed on the system
-fn list(path: &PathBuf, lib: bool) {
-    let path = if lib {
-        path.join("libs")
-    } else {
-        path.join("plugins")
-    };
-    if let Ok(entries) = fs::read_dir(path) {
-        let mut entry;
-        let mut entry_name;
-        let mut entry_typ;
-        let mut name;
-        let mut ind = 0;
-        for entry_res in entries {
-            if ind == 0 {
-                println!("{}:", if lib { "libraries" } else { "plugins" });
-            }
-            ind += 1;
-            entry = entry_res.unwrap();
-            entry_typ = entry.file_type().unwrap_or_else(|e| {
-                eprintln!("Something went wrong.\nError: {}", e);
-                std::process::exit(1);
-            });
-            entry_name = entry.file_name();
-            name = entry_name.to_str().unwrap_or("");
-            if entry_typ.is_dir() && entry_name != "" {
-                println!("\x1b[1;34m{ind}. {name}\x1b[0m");
-            }
-        }
-        if ind > 0 {
-            println!(
-                "total of {ind} {}",
-                if lib { "libraries" } else { "plugins" }
-            );
-        }
-    }
-}
-fn main() {
-    let lua_ctx = lua::init().unwrap_or_else(|e| {
-        eprintln!("{}", e);
-        std::process::exit(1)
-    });
-    let mut path = setup();
-    let plugins = load_plugins(&lua_ctx, &mut path).unwrap_or_else(|e| {
-        eprintln!("Failed to load plugins: \n{}", e.to_string());
-        vec![]
-    });
-    let mut config_args = Command::new("config")
-        .about("configure linux/Windows machines and network devices.")
-        .arg(
-            Arg::new("interactive")
-                .short('i')
-                .long("interactive")
-                .help("Config in an interactive way by asking for each argument one by one")
-                .action(ArgAction::SetTrue),
-        );
-    let args = command!()
+    // define the cli usafe of the program
+    fn define_cli_usage() -> Command {
+        command!()
         .about(
             "a tool for networking and cyber specialists, 
 featuring Lua scripting and the yrnu library for crafting networking tools and automating tasks. 
@@ -714,38 +398,591 @@ Key features include configuring network settings, sending custom traffic, and d
                 .help("A lua script to execute")
                 .exclusive(true)
                 .value_name("SCRIPT"),
-        );
-    for (name, table) in &plugins {
-        let plugin = load_plugin(&lua_ctx, (name, table));
-        if plugin.is_err() {
-            println!("failed!");
-            eprintln!("{:?}", plugin);
-        } else {
-            config_args = config_args.subcommand(plugin.unwrap().0);
-        }
+        )
     }
-    let args_matches = args.subcommand(config_args).get_matches();
-    if let Some(script) = args_matches.get_one::<String>("script") {
-        match read_script(script.to_string()) {
-            Ok(contents) => {
-                if let Err(e) = lua::run(&lua_ctx, &contents) {
-                    eprintln!("{}", e);
+    // Loads the user plugins (uses load_plugin under the hood)
+    pub fn load_plugins(mut self) -> Self {
+        match self.read_plugins() {
+            Err(e) => {
+                error!("Faild to read plugins: {}", e);
+            }
+            _ => {
+                info!("Successfuly read plugins")
+            }
+        }
+        let mut is_err = false;
+        let mut config_args = Command::new("config")
+            .about("configure linux/Windows machines and network devices or any other thing that comes to mind.")
+            .arg(
+                Arg::new("interactive")
+                    .short('i')
+                    .long("interactive")
+                    .help("Config in an interactive way by asking for each argument one by one")
+                    .action(ArgAction::SetTrue),
+            );
+        for plugin in &self.plugins {
+            match Self::load_plugin(&self, &plugin.0, &plugin.1, &plugin.0) {
+                Ok((cmd, func)) => {
+                    config_args = config_args.subcommand(cmd);
+                    self.lua
+                        .globals()
+                        .set(plugin.0.to_owned(), func)
+                        .unwrap_or_else(|e| {
+                            error!("Faild to create subcommand for {}. Error: {e}", plugin.0)
+                        });
+                }
+                Err(e) => {
+                    error!("Faild to load {}: {e}", plugin.0);
+                    is_err = true
                 }
             }
-            Err(e) => eprintln!("{}", e),
         }
+        if is_err {
+            warn!("There is plugins that failed to load")
+        }
+        self.args = self.args.subcommand(config_args);
+        self
+    }
+    // Initiate a new Yrnu instance
+    pub fn new(level: Option<log::LevelFilter>) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut path = match std::env::var("YRNU_CONFIG_DIR") {
+            Ok(path) => PathBuf::from(path),
+            Err(_) => {
+                if let Some(path) = dirs::config_dir() {
+                    path
+                } else {
+                    if let Some(path) = dirs::home_dir() {
+                        path
+                    } else {
+                        PathBuf::from("/")
+                    }
+                }
+            }
+        };
+        path.push("yrnu");
+        if !path.is_dir() {
+            _ = std::fs::create_dir_all(path.clone());
+        }
+        let lua = lua::init();
+        if lua.is_err() {
+            eprintln!("Faild to initiate Lua context.");
+            std::process::exit(-1);
+        }
+        if let Some(level) = level {
+            simple_logging::log_to_file(&path.join("yrnu.log"), level)
+                .unwrap_or_else(|e| error!("{e}"));
+        } else {
+            simple_logging::log_to_file(&path.join("yrnu.log"), LevelFilter::Info)
+                .unwrap_or_else(|e| error!("{e}"));
+        };
+        let args = Self::define_cli_usage();
+        let mut yrnu = Self {
+            lua: lua.unwrap(),
+            root: path,
+            args: args.clone(),
+            ..Default::default()
+        };
+        yrnu = yrnu.load_plugins();
+        yrnu.arg_matches = yrnu.args.clone().get_matches();
+        Ok(yrnu)
+    }
+    /// Handle the cli usage of the plugins
+    pub fn handle_cli_matches(
+        &self,
+        plugin: &(String, mlua::Table),
+        interactive: bool,
+    ) -> mlua::Result<String> {
+        let (_, table): &(String, mlua::Table) = plugin;
+        let config_table = self.lua.create_table().unwrap_or_else(|_| {
+            error!("Something went wrong...");
+            std::process::exit(10)
+        });
+        let mut input = String::new();
+        let _yes = String::from("yes");
+        let _true = String::from("yes");
+        let _on = String::from("yes");
+        let args = table.get::<mlua::Table>("args");
+        if let Ok(args) = args {
+            let mut arg_name;
+            let mut arg_opts;
+            let mut arg_values;
+            let mut prompt;
+            let mut required;
+            for arg in args.pairs::<String, mlua::Value>() {
+                (arg_name, arg_values) = arg.unwrap_or_else(|_| {
+                    error!("Invalid argument definition of args");
+                    std::process::exit(11)
+                });
+                arg_opts = match arg_values {
+                    mlua::Value::Table(value) => value,
+                    mlua::Value::String(value) => {
+                        let table = self.lua.create_table()?;
+                        if value.to_str().unwrap().len() == 1 {
+                            table.set("short", value)?;
+                        } else {
+                            table.set("help", value)?;
+                        }
+                        table
+                    }
+                    _ => {
+                        error!("Faild to load argument {}!, value should be either a table or a string", arg_name);
+                        continue;
+                    }
+                };
+                required = arg_opts.get::<bool>("required").unwrap_or(false);
+                prompt = arg_opts
+                    .get::<String>("interactive")
+                    .unwrap_or(arg_name.clone());
+                let name = arg_name.clone();
+                let update =
+                    arg_opts
+                        .get::<mlua::Function>("update")
+                        .unwrap_or(self.lua.create_function(
+                            move |_, (this, value): (mlua::Table, mlua::Value)| {
+                                _ = this.set(name.to_owned(), value);
+                                Ok(())
+                            },
+                        )?);
+                if interactive {
+                    input.clear();
+                    print!("{prompt}: ");
+                    std::io::stdout().flush().unwrap_or_else(|e| {
+                        eprintln!("Something went bad!\nError: {e}");
+                    });
+                    std::io::stdin().read_line(&mut input).unwrap_or_else(|e| {
+                        eprintln!("Something went bad!\nError: {e}");
+                        1
+                    });
+                    print!("\x1B[1A");
+                    print!("\x1B[2K");
+                }
+                match arg_opts
+                    .get::<String>("arg_type")
+                    .unwrap_or_default()
+                    .as_str()
+                {
+                    "bool" | "boolish" => {
+                        let value = if interactive {
+                            if arg_opts.get::<String>("arg_type").unwrap_or_default() == "bool" {
+                                Some(_true.contains(&input))
+                            } else {
+                                Some(
+                                    String::from("true").contains(&input)
+                                        || String::from("yes").contains(&input)
+                                        || String::from("on").contains(&input),
+                                )
+                            }
+                        } else {
+                            if let Some(val) = self.arg_matches.get_one::<bool>(&arg_name) {
+                                Some(val.to_owned())
+                            } else {
+                                None
+                            }
+                        };
+                        if let Some(value) = value {
+                            _ = update
+                                .call::<(mlua::Table, bool)>((config_table.clone(), value.clone()))
+                        }
+                    }
+                    "int" => {
+                        let value = if interactive {
+                            let mut num = input.trim().parse::<i64>();
+                            if required {
+                                while num.is_err() {
+                                    print!("{prompt}: ");
+                                    std::io::stdout().flush().unwrap_or_else(|e| {
+                                        error!("Something went bad!\nError: {e}");
+                                    });
+                                    std::io::stdin().read_line(&mut input).unwrap_or_else(|e| {
+                                        error!("Something went bad!\nError: {e}");
+                                        1
+                                    });
+                                    print!("\x1B[1A");
+                                    print!("\x1B[2K");
+                                    num = input.trim().parse::<i64>();
+                                }
+                            }
+                            if num.is_ok() {
+                                Some(num.unwrap())
+                            } else {
+                                None
+                            }
+                        } else {
+                            if let Some(val) = self.arg_matches.get_one::<i64>(&arg_name) {
+                                Some(val.to_owned())
+                            } else {
+                                None
+                            }
+                        };
+                        if let Some(value) = value {
+                            _ = update.call::<(mlua::Table, mlua::Number)>((
+                                config_table.clone(),
+                                value.clone(),
+                            ))
+                        }
+                    }
+                    "uint" => {
+                        let value = if interactive {
+                            let mut num = input.parse::<u64>();
+                            if required {
+                                while num.is_err() {
+                                    print!("{prompt}: ");
+                                    std::io::stdout().flush().unwrap_or_else(|e| {
+                                        eprintln!("Something went bad!\nError: {e}");
+                                    });
+                                    std::io::stdin().read_line(&mut input).unwrap_or_else(|e| {
+                                        eprintln!("Something went bad!\nError: {e}");
+                                        1
+                                    });
+                                    print!("\x1B[1A");
+                                    print!("\x1B[2K");
+                                    num = input.trim().parse::<u64>();
+                                }
+                            }
+                            if num.is_ok() {
+                                Some(num.unwrap())
+                            } else {
+                                None
+                            }
+                        } else {
+                            if let Some(val) = self.arg_matches.get_one::<u64>(&arg_name) {
+                                Some(val.to_owned())
+                            } else {
+                                None
+                            }
+                        };
+                        if let Some(value) = value {
+                            _ = update.call::<(mlua::Table, mlua::Number)>((
+                                config_table.clone(),
+                                value.clone(),
+                            ))
+                        }
+                    }
+                    "real" => {
+                        let value = if interactive {
+                            let mut num = input.parse::<f64>();
+                            if required {
+                                while num.is_err() {
+                                    print!("{prompt}: ");
+                                    std::io::stdout().flush().unwrap_or_else(|e| {
+                                        eprintln!("Something went bad!\nError: {e}");
+                                    });
+                                    std::io::stdin().read_line(&mut input).unwrap_or_else(|e| {
+                                        eprintln!("Something went bad!\nError: {e}");
+                                        1
+                                    });
+                                    print!("\x1B[1A");
+                                    print!("\x1B[2K");
+                                    num = input.trim().parse::<f64>();
+                                }
+                            }
+                            if num.is_ok() {
+                                Some(num.unwrap())
+                            } else {
+                                None
+                            }
+                        } else {
+                            if let Some(val) = self.arg_matches.get_one::<f64>(&arg_name) {
+                                Some(val.to_owned())
+                            } else {
+                                None
+                            }
+                        };
+                        if let Some(value) = value {
+                            _ = update.call::<(mlua::Table, mlua::Number)>((
+                                config_table.clone(),
+                                value.clone(),
+                            ))
+                        }
+                    }
+                    "table" => {
+                        let values = if interactive {
+                            println!("{input}");
+                            input.split(",").collect()
+                        } else {
+                            self.arg_matches
+                                .get_many::<String>(&arg_name)
+                                .unwrap_or_default()
+                                .map(|v| v.as_str())
+                                .collect::<Vec<_>>()
+                        };
+                        let table = self.lua.create_table()?;
+                        let mut split;
+                        for (i, val) in values.iter().enumerate() {
+                            if val.split("=").count() == 1 {
+                                table.set(i + 1, val.trim())?;
+                            } else if val.split("=").count() == 2 {
+                                split = val.split("=");
+                                table.set(
+                                    split.next().unwrap().trim(),
+                                    split.next().unwrap().trim(),
+                                )?;
+                            }
+                        }
+                        _ = update.call::<(mlua::Table, mlua::Table)>((config_table.clone(), table))
+                    }
+                    "nil" => {
+                        let include = if interactive {
+                            print!("Include {arg_name} (Y/N): ");
+                            std::io::stdout().flush().unwrap_or_else(|e| {
+                                eprintln!("Something went bad!\nError: {e}");
+                            });
+                            std::io::stdin().read_line(&mut input).unwrap_or_else(|e| {
+                                eprintln!("Something went bad!\nError: {e}");
+                                1
+                            });
+                            &String::from("yes").contains(&input.to_lowercase())
+                        } else {
+                            self.arg_matches
+                                .get_one::<bool>(&arg_name)
+                                .unwrap_or(&false)
+                        };
+                        if *include {
+                            _ = update.call::<mlua::Table>(config_table.clone())
+                        }
+                    }
+                    _ => {
+                        let value = if interactive {
+                            if input.trim() != "" {
+                                Some(&input)
+                            } else {
+                                None
+                            }
+                        } else {
+                            self.arg_matches.get_one::<String>(&arg_name)
+                        };
+                        if let Some(value) = value {
+                            _ = update
+                                .call::<(mlua::Table, String)>((config_table.clone(), value.trim()))
+                        }
+                    }
+                }
+            }
+        }
+        let config_func = table.get::<mlua::Function>("config");
+        let mut config_str = if let Ok(config) = config_func {
+            config.call::<String>(config_table)?
+        } else {
+            "".to_string()
+        };
+        let subcmds = table.get::<mlua::Table>("subcommands");
+        if let Ok(subcmds) = subcmds {
+            let mut scmd_name;
+            let mut scmd_opts;
+            let mut subconfig;
+            for subcmd in subcmds.pairs::<String, mlua::Table>() {
+                (scmd_name, scmd_opts) = subcmd?;
+                let include = if interactive {
+                    input.clear();
+                    print!("Include {scmd_name} (Y/N): ");
+                    std::io::stdout().flush().unwrap_or_else(|e| {
+                        eprintln!("Something went bad!\nError: {e}");
+                    });
+                    std::io::stdin().read_line(&mut input).unwrap_or_else(|e| {
+                        eprintln!("Something went bad!\nError: {e}");
+                        1
+                    });
+                    print!("\x1B[1A");
+                    print!("\x1B[2K");
+                    _yes.contains(&input.trim().to_lowercase())
+                } else {
+                    self.arg_matches.subcommand().is_some()
+                        && self.arg_matches.subcommand().unwrap().0 == scmd_name
+                };
+                if include {
+                    subconfig = self.handle_cli_matches(&(scmd_name, scmd_opts), interactive);
+                    if let Ok(subconfig) = subconfig {
+                        config_str = format!("{config_str}{}", subconfig);
+                    }
+                }
+            }
+        }
+        Ok(config_str)
+    }
+    /// Clone a remote plugin using https (todo ssh)
+    pub fn clone_plugin(link: &str, plugin_dir: &mut PathBuf, force: bool) -> String {
+        let url_link = url::Url::parse(link).unwrap_or_else(|e| {
+            if link.split("/").count() == 2 {
+                url::Url::parse(&format!("https://github.com/{link}")).unwrap_or_else(|e| {
+                    eprintln!("Invalid URL: {link}\nError: {e}");
+                    std::process::exit(1)
+                })
+            } else {
+                eprintln!("Invalid URL: {link}\nError: {e}");
+                std::process::exit(1)
+            }
+        });
+        let mut plugin_name = url_link
+            .path_segments()
+            .into_iter()
+            .last()
+            .unwrap()
+            .map(|s| format!("{s}/"))
+            .collect::<String>();
+        plugin_name.pop();
+        if plugin_name.ends_with(".git") {
+            plugin_name = plugin_name[..plugin_name.len() - 4].to_owned();
+        }
+        plugin_name = plugin_name.replace("-", "_").replace("/", "-");
+        plugin_dir.push(&plugin_name);
+        if !plugin_dir.is_dir() {
+            _ = std::fs::create_dir_all(plugin_dir.clone());
+        } else if let Ok(entries) = fs::read_dir(&plugin_dir) {
+            if entries.into_iter().count() > 0 && !force {
+                eprintln!(
+                    "The plugin directory is installed and is not empty! use \"-f\" to force"
+                );
+                std::process::exit(1)
+            } else if force {
+                _ = std::fs::remove_dir_all(plugin_dir.clone());
+                _ = std::fs::create_dir_all(plugin_dir.clone());
+            }
+        }
+        let mut builder = git2::build::RepoBuilder::new();
+        let mut fo = FetchOptions::new();
+        fo.depth(1);
+        builder.fetch_options(fo);
+        if let Err(e) = builder.clone(url_link.as_str(), plugin_dir) {
+            if e.code() != git2::ErrorCode::Exists {
+                if e.class() == git2::ErrorClass::Http {
+                    _ = builder.clone(link, plugin_dir).unwrap_or_else(|e| {
+                        eprintln!("Failed cloning plugin repo: {e}");
+                        std::process::exit(1);
+                    })
+                } else if e.class() == git2::ErrorClass::Net {
+                    eprintln!("Network error: {}", e.message());
+                    std::process::exit(1);
+                } else {
+                    eprintln!("Failed cloning plugin repo: {e}");
+                    std::process::exit(1);
+                }
+            }
+        };
+        plugin_name
+    }
+    /// Clone a local directory that contains a plugin to the plugin directory
+    pub fn clone_local_plugin(
+        src: &PathBuf,main
+        plugin_dir: &PathBuf,
+        force: bool,
+        mov: bool,
+    ) -> String {
+        let name = src.file_name().unwrap_or_else(|| {
+            eprintln!("Invalid path: {}", src.to_str().unwrap_or_default());
+            std::process::exit(1);
+        });
+        let plugin_dir = plugin_dir.join(name);
+        if !plugin_dir.is_dir() {
+            _ = std::fs::create_dir_all(plugin_dir.clone());
+        } else if let Ok(entries) = fs::read_dir(&plugin_dir) {
+            if entries.into_iter().count() > 0 && !force {
+                eprintln!(
+                    "The plugin directory is installed and is not empty! use \"-f\" to force"
+                );
+                std::process::exit(1)
+            }
+        }
+        if let Ok(entries) = fs::read_dir(src) {
+            let mut entry;
+            let mut entry_path;
+            let mut entry_name;
+            let mut entry_typ;
+            for entry_res in entries {
+                entry = entry_res.unwrap();
+                entry_path = entry.path();
+                entry_typ = entry.file_type().unwrap_or_else(|e| {
+                    eprintln!("Something went wrong.\nError: {}", e);
+                    std::process::exit(1);
+                });
+                entry_name = entry.file_name();
+                if entry_typ.is_dir() {
+                    _ = Self::clone_local_plugin(&entry_path, &plugin_dir, force, mov);
+                    _ = fs::remove_dir(&entry_path);
+                } else {
+                    _ = fs::copy(&entry_path, plugin_dir.join(entry_name));
+                    _ = fs::remove_file(&entry_path);
+                }
+            }
+            if mov {}
+        }
+        name.to_str()
+            .unwrap_or_else(|| {
+                eprintln!("Invalid path: {}", src.to_str().unwrap_or_default());
+                std::process::exit(1);
+            })
+            .to_owned()
+    }
+    /// Runs a lua script
+    pub fn run_script(&self, name: &String) -> mlua::Result<()> {
+        let mut file = File::open(name)?;
+        let mut content = String::new();
+        file.read_to_string(&mut content)?;
+        lua::run(&self.lua, &content)?;
+        Ok(())
+    }
+    /// Prints all the plugins that currently installed on the system
+    fn list(&self, lib: bool) {
+        let path = if lib {
+            self.root.join("libs")
+        } else {
+            self.root.join("plugins")
+        };
+        if let Ok(entries) = fs::read_dir(path) {
+            let mut entry;
+            let mut entry_name;
+            let mut entry_typ;
+            let mut name;
+            let mut ind = 0;
+            for entry_res in entries {
+                if ind == 0 {
+                    println!("{}:", if lib { "libraries" } else { "plugins" });
+                }
+                ind += 1;
+                entry = entry_res.unwrap();
+                entry_typ = entry.file_type().unwrap_or_else(|e| {
+                    eprintln!("Something went wrong.\nError: {}", e);
+                    std::process::exit(1);
+                });
+                entry_name = entry.file_name();
+                name = entry_name.to_str().unwrap_or("");
+                if entry_typ.is_dir() && entry_name != "" {
+                    println!("\x1b[1;34m{ind}. {name}\x1b[0m");
+                }
+            }
+            if ind > 0 {
+                println!(
+                    "total of {ind} {}",
+                    if lib { "libraries" } else { "plugins" }
+                );
+            }
+        }
+    }
+}
+
+fn main() {
+    let yrnu = Yrnu::new(None).unwrap();
+    if let Some(script) = yrnu.arg_matches.get_one::<String>("script") {
+        if let Err(e) = yrnu.run_script(script) {
+            println!("{e}");
+            std::process::exit(-1);
+        };
     } else {
-        match args_matches.subcommand() {
+        match yrnu.arg_matches.subcommand() {
             Some(("config", config)) => {
-                for plugin in &plugins {
-                    let output = handle_cli_matches(&lua_ctx, config, plugin).unwrap();
-                    if output != "" {
-                        println!("{}", output.trim());
+                let interactive = config.get_one::<bool>("interactive").unwrap();
+                for plugin in &yrnu.plugins {
+                    if let Some((scmd_name, _)) = config.subcommand() {
+                        if scmd_name == plugin.0 {
+                            let output = yrnu.handle_cli_matches(plugin, *interactive);
+                            if let Ok(output) = output {
+                                println!("{}", output.trim());
+                            }
+                        }
                     }
                 }
             }
             Some(("add", add_args)) => {
-                let mut plugin_dir = path;
+                let mut plugin_dir = yrnu.root;
                 let force = *add_args.get_one::<bool>("force").unwrap();
                 if *add_args.get_one::<bool>("lib").unwrap() {
                     plugin_dir.push("libs");
@@ -753,19 +990,19 @@ Key features include configuring network settings, sending custom traffic, and d
                     plugin_dir.push("plugins");
                 }
                 if let Some(link) = add_args.get_one::<String>("url") {
-                    let plugin_name = clone_plugin(link, &mut plugin_dir, force);
+                    let plugin_name = Yrnu::clone_plugin(link, &mut plugin_dir, force);
                     println!("Added {plugin_name}.");
                 } else {
                     let mov = add_args.get_one::<bool>("move").unwrap_or_else(|| {
-                        eprintln!("{}", error("Path is invalid."));
+                        error!("Path is invalid.");
                         std::process::exit(1)
                     });
                     let src = PathBuf::from(add_args.get_one::<String>("path").unwrap());
                     if !src.exists() {
-                        eprintln!("{}", error("Path not exists."));
+                        error!("Path not exists.");
                         std::process::exit(1)
                     }
-                    let plugin_name = clone_local_plugin(&src, &mut plugin_dir, force, *mov);
+                    let plugin_name = Yrnu::clone_local_plugin(&src, &mut plugin_dir, force, *mov);
                     if *mov {
                         _ = fs::remove_dir(&src);
                     }
@@ -773,14 +1010,14 @@ Key features include configuring network settings, sending custom traffic, and d
                 }
             }
             Some(("remove", remove_args)) => {
-                let mut plugin_dir = path;
+                let mut plugin_dir = yrnu.root;
                 let name = remove_args.get_one::<String>("name").unwrap();
                 if name.contains("/")
                     || name.contains(".")
                     || name.contains("~")
                     || name.contains("\\")
                 {
-                    eprintln!("{}", error("Please provide a valid value"));
+                    error!("Please provide a valid value");
                     std::process::exit(1);
                 }
                 if *remove_args.get_one::<bool>("lib").unwrap() {
@@ -794,27 +1031,24 @@ Key features include configuring network settings, sending custom traffic, and d
                     std::io::stdout().flush().unwrap();
                     let mut answer: String = String::new();
                     std::io::stdin().read_line(&mut answer).unwrap_or_else(|e| {
-                        eprintln!("{}", error(&format!("An error has been accurd: {e}")));
+                        error!("An error has been accurd: {e}");
                         std::process::exit(1);
                     });
                     yes = "yes".starts_with(&answer.trim().to_lowercase())
                 }
                 if !yes {
-                    eprintln!("{}", error("Remove has been canceled."));
+                    error!("Remove has been canceled.");
                     std::process::exit(1);
                 }
                 plugin_dir.push(name);
                 if plugin_dir.exists() {
                     std::fs::remove_dir_all(plugin_dir).unwrap_or_else(|e| {
-                        eprintln!("{}", error(&format!("Faild to remove plugin {name}\n{e}")));
+                        error!("Faild to remove plugin {name}\n{e}");
                         std::process::exit(1)
                     });
-                    println!("{}", success(&format!("Removed {name}.")));
+                    info!("Removed {name}.");
                 } else {
-                    eprintln!(
-                        "{}",
-                        error(&format!("Faild to remove plugin {name}, {name} not exists"))
-                    );
+                    error!("Faild to remove plugin {name}, {name} not exists");
                     std::process::exit(1)
                 }
             }
@@ -822,13 +1056,15 @@ Key features include configuring network settings, sending custom traffic, and d
                 let lib = *list_args.get_one::<bool>("lib").unwrap();
                 let plugin = list_args.get_one::<bool>("plugin").unwrap();
                 if !lib && !plugin {
-                    list(&path, false);
-                    list(&path, true);
+                    yrnu.list(false);
+                    yrnu.list(true);
                 } else {
-                    list(&path, lib);
+                    yrnu.list(lib);
                 }
             }
-            _ => lua::interpreter::start_interpreter(&lua_ctx).expect("Failed to run interpreter."),
+            _ => {
+                lua::interpreter::start_interpreter(&yrnu.lua).expect("Failed to run interpreter.")
+            }
         }
     }
 }
