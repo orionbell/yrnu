@@ -1,0 +1,1 @@
+import{_ as i,c as a,o as e,ae as t}from"./chunks/framework.tuuL-SzM.js";const c=JSON.parse('{"title":"Core Utils","description":"","frontmatter":{},"headers":[],"relativePath":"lua_core.md","filePath":"lua_core.md"}'),n={name:"lua_core.md"};function l(h,s,p,d,r,k){return e(),a("div",null,s[0]||(s[0]=[t("",351)]))}const g=i(n,[["render",l]]);export{c as __pageData,g as default};
