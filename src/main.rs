@@ -8,17 +8,16 @@ use std::fs::{self, File};
 use std::io::prelude::*;
 use std::path::PathBuf;
 use std::str::FromStr;
-use yrnu::core::{IpAddress, MacAddress, Mask, Network};
+use yrnu::core::{Interface, IpAddress, MacAddress, Mask, Network, Path, Url};
 use yrnu::lua;
 
-/// The global yrnu #[derive(Debug)]
+/// The global yrnu
 #[derive(Debug, Clone, Default)]
 struct Yrnu {
-    pub lua: Lua,
-    pub root: PathBuf,
-    pub plugins: Vec<(String, mlua::Table)>,
-    pub args: Command,
-    pub arg_matches: ArgMatches,
+    lua: Lua,
+    root: PathBuf,
+    plugins: Vec<(String, mlua::Table)>,
+    args: Command,
 }
 
 impl Yrnu {
@@ -59,7 +58,9 @@ impl Yrnu {
     ) -> mlua::Result<Arg> {
         let mut arg = Arg::new(arg_name);
         if let Ok(required) = arg_options.get::<bool>("required") {
-            arg = arg.required(required);
+            if required {
+                arg = arg.required_unless_present("wizard");
+            }
         }
         if let Ok(short) = arg_options.get::<String>("short") {
             if short.len() == 0 {
@@ -100,7 +101,6 @@ impl Yrnu {
                 .as_str()
             {
                 "bool" => arg.value_parser(builder::BoolValueParser::new()),
-                "path" => arg.value_parser(builder::PathBufValueParser::new()),
                 "int" => {
                     let max = arg_options.get::<i64>("max").unwrap_or(i64::MAX);
                     let min = arg_options.get::<i64>("min").unwrap_or(i64::MIN);
@@ -117,10 +117,13 @@ impl Yrnu {
                     .allow_negative_numbers(true)
                     .value_parser(value_parser!(f64)),
                 "boolish" => arg.value_parser(builder::BoolishValueParser::new()),
-                "ip-address" => arg.value_parser(IpAddress::new),
+                "ip-address" => arg.value_parser(IpAddress::from_str),
                 "network" => arg.value_parser(Network::from_str),
-                "mask" => arg.value_parser(Mask::new),
-                "mac-address" => arg.value_parser(MacAddress::new),
+                "mask" => arg.value_parser(Mask::from_str),
+                "mac-address" => arg.value_parser(MacAddress::from_str),
+                "interface" => arg.value_parser(Interface::from_str),
+                "path" => arg.value_parser(Path::from_str),
+                "url" => arg.value_parser(Url::from_str),
                 _ => arg,
             },
         };
@@ -135,7 +138,14 @@ impl Yrnu {
     ) -> mlua::Result<(Command, mlua::Function)> {
         let start_config = table.get("preconfig").unwrap_or("".to_string());
         let end_config = table.get("postconfig").unwrap_or("".to_string());
-        let mut subcmd = Command::new(name);
+        let mut subcmd = Command::new(name).arg(
+            Arg::new("wizard")
+                .short('w')
+                .long("wizard")
+                .exclusive(true)
+                .help("Config using a wizard by asking for each argument one by one")
+                .action(ArgAction::SetTrue),
+        );
         let args = table.get::<mlua::Table>("args")?;
         let subcommands = table.get::<mlua::Table>("subcommands");
         if let Ok(about) = table.get::<String>("about") {
@@ -293,7 +303,7 @@ impl Yrnu {
             Ok(())
         }
     }
-    // define the cli usafe of the program
+    // Define the cli usage of the program
     fn define_cli_usage() -> Command {
         command!()
         .about(
@@ -412,14 +422,7 @@ Key features include configuring network settings, sending custom traffic, and d
         }
         let mut is_err = false;
         let mut config_args = Command::new("config")
-            .about("configure linux/Windows machines and network devices or any other thing that comes to mind.")
-            .arg(
-                Arg::new("interactive")
-                    .short('i')
-                    .long("interactive")
-                    .help("Config in an interactive way by asking for each argument one by one")
-                    .action(ArgAction::SetTrue),
-            );
+            .about("configure linux/Windows machines and network devices or any other thing that comes to mind.");
         for plugin in &self.plugins {
             match Self::load_plugin(&self, &plugin.0, &plugin.1, &plugin.0) {
                 Ok((cmd, func)) => {
@@ -483,14 +486,14 @@ Key features include configuring network settings, sending custom traffic, and d
             ..Default::default()
         };
         yrnu = yrnu.load_plugins();
-        yrnu.arg_matches = yrnu.args.clone().get_matches();
         Ok(yrnu)
     }
     /// Handle the cli usage of the plugins
     pub fn handle_cli_matches(
         &self,
+        arg_matches: &ArgMatches,
         plugin: &(String, mlua::Table),
-        interactive: bool,
+        wizard: bool,
     ) -> mlua::Result<String> {
         let (_, table): &(String, mlua::Table) = plugin;
         let config_table = self.lua.create_table().unwrap_or_else(|_| {
@@ -499,8 +502,11 @@ Key features include configuring network settings, sending custom traffic, and d
         });
         let mut input = String::new();
         let _yes = String::from("yes");
-        let _true = String::from("yes");
-        let _on = String::from("yes");
+        let _true = String::from("true");
+        let _on = String::from("on");
+        let _no = String::from("no");
+        let _false = String::from("false");
+        let _off = String::from("off");
         let args = table.get::<mlua::Table>("args");
         if let Ok(args) = args {
             let mut arg_name;
@@ -530,9 +536,7 @@ Key features include configuring network settings, sending custom traffic, and d
                     }
                 };
                 required = arg_opts.get::<bool>("required").unwrap_or(false);
-                prompt = arg_opts
-                    .get::<String>("interactive")
-                    .unwrap_or(arg_name.clone());
+                prompt = arg_opts.get::<String>("wizard").unwrap_or(arg_name.clone());
                 let name = arg_name.clone();
                 let update =
                     arg_opts
@@ -543,7 +547,9 @@ Key features include configuring network settings, sending custom traffic, and d
                                 Ok(())
                             },
                         )?);
-                if interactive {
+                if wizard {
+                    print!("\x1B[1A");
+                    print!("\x1B[2K");
                     input.clear();
                     print!("{prompt}: ");
                     std::io::stdout().flush().unwrap_or_else(|e| {
@@ -553,8 +559,6 @@ Key features include configuring network settings, sending custom traffic, and d
                         eprintln!("Something went bad!\nError: {e}");
                         1
                     });
-                    print!("\x1B[1A");
-                    print!("\x1B[2K");
                 }
                 match arg_opts
                     .get::<String>("arg_type")
@@ -562,18 +566,26 @@ Key features include configuring network settings, sending custom traffic, and d
                     .as_str()
                 {
                     "bool" | "boolish" => {
-                        let value = if interactive {
+                        let value = if wizard {
                             if arg_opts.get::<String>("arg_type").unwrap_or_default() == "bool" {
                                 Some(_true.contains(&input))
                             } else {
-                                Some(
-                                    String::from("true").contains(&input)
-                                        || String::from("yes").contains(&input)
-                                        || String::from("on").contains(&input),
-                                )
+                                if String::from("true").contains(&input)
+                                    || String::from("yes").contains(&input)
+                                    || String::from("on").contains(&input)
+                                {
+                                    Some(true)
+                                } else if String::from("false").contains(&input)
+                                    || String::from("no").contains(&input)
+                                    || String::from("off").contains(&input)
+                                {
+                                    Some(false)
+                                } else {
+                                    None
+                                }
                             }
                         } else {
-                            if let Some(val) = self.arg_matches.get_one::<bool>(&arg_name) {
+                            if let Some(val) = arg_matches.get_one::<bool>(&arg_name) {
                                 Some(val.to_owned())
                             } else {
                                 None
@@ -585,10 +597,13 @@ Key features include configuring network settings, sending custom traffic, and d
                         }
                     }
                     "int" => {
-                        let value = if interactive {
+                        let value = if wizard {
                             let mut num = input.trim().parse::<i64>();
                             if required {
                                 while num.is_err() {
+                                    print!("\x1B[1A");
+                                    print!("\x1B[2K");
+                                    input.clear();
                                     print!("{prompt}: ");
                                     std::io::stdout().flush().unwrap_or_else(|e| {
                                         error!("Something went bad!\nError: {e}");
@@ -597,8 +612,6 @@ Key features include configuring network settings, sending custom traffic, and d
                                         error!("Something went bad!\nError: {e}");
                                         1
                                     });
-                                    print!("\x1B[1A");
-                                    print!("\x1B[2K");
                                     num = input.trim().parse::<i64>();
                                 }
                             }
@@ -608,7 +621,7 @@ Key features include configuring network settings, sending custom traffic, and d
                                 None
                             }
                         } else {
-                            if let Some(val) = self.arg_matches.get_one::<i64>(&arg_name) {
+                            if let Some(val) = arg_matches.get_one::<i64>(&arg_name) {
                                 Some(val.to_owned())
                             } else {
                                 None
@@ -622,10 +635,11 @@ Key features include configuring network settings, sending custom traffic, and d
                         }
                     }
                     "uint" => {
-                        let value = if interactive {
-                            let mut num = input.parse::<u64>();
+                        let value = if wizard {
+                            let mut num = input.trim().parse::<u64>();
                             if required {
                                 while num.is_err() {
+                                    input.clear();
                                     print!("{prompt}: ");
                                     std::io::stdout().flush().unwrap_or_else(|e| {
                                         eprintln!("Something went bad!\nError: {e}");
@@ -645,7 +659,7 @@ Key features include configuring network settings, sending custom traffic, and d
                                 None
                             }
                         } else {
-                            if let Some(val) = self.arg_matches.get_one::<u64>(&arg_name) {
+                            if let Some(val) = arg_matches.get_one::<u64>(&arg_name) {
                                 Some(val.to_owned())
                             } else {
                                 None
@@ -659,10 +673,11 @@ Key features include configuring network settings, sending custom traffic, and d
                         }
                     }
                     "real" => {
-                        let value = if interactive {
-                            let mut num = input.parse::<f64>();
+                        let value = if wizard {
+                            let mut num = input.trim().parse::<f64>();
                             if required {
                                 while num.is_err() {
+                                    input.clear();
                                     print!("{prompt}: ");
                                     std::io::stdout().flush().unwrap_or_else(|e| {
                                         eprintln!("Something went bad!\nError: {e}");
@@ -682,7 +697,7 @@ Key features include configuring network settings, sending custom traffic, and d
                                 None
                             }
                         } else {
-                            if let Some(val) = self.arg_matches.get_one::<f64>(&arg_name) {
+                            if let Some(val) = arg_matches.get_one::<f64>(&arg_name) {
                                 Some(val.to_owned())
                             } else {
                                 None
@@ -696,11 +711,10 @@ Key features include configuring network settings, sending custom traffic, and d
                         }
                     }
                     "table" => {
-                        let values = if interactive {
-                            println!("{input}");
+                        let values = if wizard {
                             input.split(",").collect()
                         } else {
-                            self.arg_matches
+                            arg_matches
                                 .get_many::<String>(&arg_name)
                                 .unwrap_or_default()
                                 .map(|v| v.as_str())
@@ -722,7 +736,7 @@ Key features include configuring network settings, sending custom traffic, and d
                         _ = update.call::<(mlua::Table, mlua::Table)>((config_table.clone(), table))
                     }
                     "nil" => {
-                        let include = if interactive {
+                        let include = if wizard {
                             print!("Include {arg_name} (Y/N): ");
                             std::io::stdout().flush().unwrap_or_else(|e| {
                                 eprintln!("Something went bad!\nError: {e}");
@@ -733,23 +747,59 @@ Key features include configuring network settings, sending custom traffic, and d
                             });
                             &String::from("yes").contains(&input.to_lowercase())
                         } else {
-                            self.arg_matches
-                                .get_one::<bool>(&arg_name)
-                                .unwrap_or(&false)
+                            arg_matches.get_one::<bool>(&arg_name).unwrap_or(&false)
                         };
                         if *include {
                             _ = update.call::<mlua::Table>(config_table.clone())
                         }
                     }
+                    "network" => {
+                        let value = if wizard {
+                            let mut num = input.trim().parse::<Network>();
+                            if required {
+                                while num.is_err() {
+                                    print!("\x1B[1A");
+                                    print!("\x1B[2K");
+                                    input.clear();
+                                    print!("{prompt}: ");
+                                    std::io::stdout().flush().unwrap_or_else(|e| {
+                                        error!("Something went bad!\nError: {e}");
+                                    });
+                                    std::io::stdin().read_line(&mut input).unwrap_or_else(|e| {
+                                        error!("Something went bad!\nError: {e}");
+                                        1
+                                    });
+                                    num = input.trim().parse::<Network>();
+                                }
+                            }
+                            if num.is_ok() {
+                                Some(num.unwrap())
+                            } else {
+                                None
+                            }
+                        } else {
+                            if let Some(val) = arg_matches.get_one::<Network>(&arg_name) {
+                                Some(val.to_owned())
+                            } else {
+                                None
+                            }
+                        };
+                        if let Some(value) = value {
+                            _ = update.call::<(mlua::Table, mlua::Number)>((
+                                config_table.clone(),
+                                value.clone(),
+                            ))
+                        }
+                    }
                     _ => {
-                        let value = if interactive {
+                        let value = if wizard {
                             if input.trim() != "" {
                                 Some(&input)
                             } else {
                                 None
                             }
                         } else {
-                            self.arg_matches.get_one::<String>(&arg_name)
+                            arg_matches.get_one::<String>(&arg_name)
                         };
                         if let Some(value) = value {
                             _ = update
@@ -759,20 +809,23 @@ Key features include configuring network settings, sending custom traffic, and d
                 }
             }
         }
+        print!("\x1B[1A");
+        print!("\x1B[2K");
         let config_func = table.get::<mlua::Function>("config");
         let mut config_str = if let Ok(config) = config_func {
             config.call::<String>(config_table)?
         } else {
-            "".to_string()
+            config_func.err().unwrap().to_string()
         };
         let subcmds = table.get::<mlua::Table>("subcommands");
         if let Ok(subcmds) = subcmds {
             let mut scmd_name;
             let mut scmd_opts;
             let mut subconfig;
+            let mut scmd = None;
             for subcmd in subcmds.pairs::<String, mlua::Table>() {
                 (scmd_name, scmd_opts) = subcmd?;
-                let include = if interactive {
+                let include = if wizard {
                     input.clear();
                     print!("Include {scmd_name} (Y/N): ");
                     std::io::stdout().flush().unwrap_or_else(|e| {
@@ -786,20 +839,29 @@ Key features include configuring network settings, sending custom traffic, and d
                     print!("\x1B[2K");
                     _yes.contains(&input.trim().to_lowercase())
                 } else {
-                    self.arg_matches.subcommand().is_some()
-                        && self.arg_matches.subcommand().unwrap().0 == scmd_name
+                    if let Some((clap_scmd_name, clap_scmd)) = arg_matches.subcommand() {
+                        scmd = Some(clap_scmd);
+                        clap_scmd_name == scmd_name
+                    } else {
+                        false
+                    }
                 };
                 if include {
-                    subconfig = self.handle_cli_matches(&(scmd_name, scmd_opts), interactive);
-                    if let Ok(subconfig) = subconfig {
-                        config_str = format!("{config_str}{}", subconfig);
-                    }
+                    subconfig = self.handle_cli_matches(
+                        scmd.unwrap_or(arg_matches),
+                        &(scmd_name, scmd_opts),
+                        *scmd
+                            .unwrap_or(arg_matches)
+                            .get_one::<bool>("wizard")
+                            .unwrap(),
+                    )?;
+                    config_str = format!("{config_str}{}", subconfig);
                 }
             }
         }
         Ok(config_str)
     }
-    /// Clone a remote plugin using https (todo ssh)
+    /// Clone a remote plugin using https (to-do ssh)
     pub fn clone_plugin(link: &str, plugin_dir: &mut PathBuf, force: bool) -> String {
         let url_link = url::Url::parse(link).unwrap_or_else(|e| {
             if link.split("/").count() == 2 {
@@ -862,7 +924,7 @@ Key features include configuring network settings, sending custom traffic, and d
     }
     /// Clone a local directory that contains a plugin to the plugin directory
     pub fn clone_local_plugin(
-        src: &PathBuf,main
+        src: &PathBuf,
         plugin_dir: &PathBuf,
         force: bool,
         mov: bool,
@@ -957,25 +1019,33 @@ Key features include configuring network settings, sending custom traffic, and d
             }
         }
     }
+    /// Getter for the ArgMatches
+    pub fn get_matches(&self) -> ArgMatches {
+        self.args.clone().get_matches()
+    }
 }
 
 fn main() {
     let yrnu = Yrnu::new(None).unwrap();
-    if let Some(script) = yrnu.arg_matches.get_one::<String>("script") {
+    let arg_matches = yrnu.get_matches();
+    if let Some(script) = arg_matches.get_one::<String>("script") {
         if let Err(e) = yrnu.run_script(script) {
             println!("{e}");
             std::process::exit(-1);
         };
     } else {
-        match yrnu.arg_matches.subcommand() {
+        let mut wizard;
+        match arg_matches.subcommand() {
             Some(("config", config)) => {
-                let interactive = config.get_one::<bool>("interactive").unwrap();
                 for plugin in &yrnu.plugins {
-                    if let Some((scmd_name, _)) = config.subcommand() {
+                    if let Some((scmd_name, scmd)) = config.subcommand() {
+                        wizard =
+                            *scmd.get_one::<bool>("wizard").unwrap() && scmd.subcommand().is_none();
                         if scmd_name == plugin.0 {
-                            let output = yrnu.handle_cli_matches(plugin, *interactive);
-                            if let Ok(output) = output {
-                                println!("{}", output.trim());
+                            let output = yrnu.handle_cli_matches(scmd, plugin, wizard);
+                            match output {
+                                Ok(output) => println!("{}", output.trim()),
+                                Err(e) => eprintln!("Error: {e}"),
                             }
                         }
                     }

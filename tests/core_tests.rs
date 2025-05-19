@@ -1,5 +1,5 @@
-use yrnu::core::{self, Interface, IpAddress, IpKind, IpVersion, MacAddress, Mask, Network};
 use std::str::FromStr;
+use yrnu::core::{self, Interface, IpAddress, IpKind, IpVersion, MacAddress, Mask, Network};
 // IpVersion tests
 #[test]
 fn is_v4_test() {
@@ -32,9 +32,9 @@ fn get_kind_test() {}
 // IpAddress tests
 #[test]
 fn new_ipaddress_test() {
-    let addr = IpAddress::new("192.168.1.1").unwrap();
+    let addr = IpAddress::from_str("192.168.1.1").unwrap();
     assert_eq!(addr.to_string(), "192.168.1.1");
-    let addr2 = IpAddress::new("fc00::1").unwrap();
+    let addr2 = IpAddress::from_str("fc00::1").unwrap();
     assert_eq!(addr2.to_string(), "fc00::1");
 }
 #[test]
@@ -74,24 +74,28 @@ fn is_valid_test() {
 
 #[test]
 fn new_mask_test() {
-    let mask = Mask::new("255.255.255.224").unwrap();
+    let mask = Mask::from_str("255.255.255.224").unwrap();
     assert_eq!(mask.to_string(), "255.255.255.224");
-    assert_eq!(mask.wildcard(), "0.0.0.31" );
+    assert_eq!(mask.wildcard(), "0.0.0.31");
     let mask2 = Mask::from_prefix(24).unwrap();
-    assert_eq!(mask2.to_string(), "255.255.255.0"); 
-    assert_eq!(mask2.wildcard(), "0.0.0.255" );
+    assert_eq!(mask2.to_string(), "255.255.255.0");
+    assert_eq!(mask2.wildcard(), "0.0.0.255");
 }
 // Network tests
 #[test]
 fn new_network_test() {
-    let id = IpAddress::new("192.168.1.0").unwrap();
+    let id = IpAddress::from_str("192.168.1.0").unwrap();
     let mask = Mask::from_prefix(28).unwrap();
-    let id2 = IpAddress::new("192.168.1.16").unwrap();
-    let mask2 = Mask::new("255.255.255.240").unwrap();
+    let id2 = IpAddress::from_str("192.168.1.16").unwrap();
+    let mask2 = Mask::from_str("255.255.255.240").unwrap();
     let net = Network::new(id2, mask2).unwrap();
     let net1 = Network::new(id, mask).unwrap();
     //let mask = Mask::from_prefix(27).unwrap();
-    let net2 = Network::from_str("192.168.1.32/27").expect("failed");
+    let net2 = Network::from_str("192.168.1.32/27");
+    if let Some(e) = net2.as_ref().err() {
+        println!("{e}");
+    }
+    let net2 = net2.unwrap();
     let big_net = Network::from_str("10.0.16.0/20").expect("failed");
     let super_big_net = Network::from_str("10.16.0.0/12").expect("failed");
     let wild_card_net = Network::from_str("0.0.0.0/0").unwrap();
@@ -110,17 +114,17 @@ fn new_network_test() {
 fn containes_test() {
     let net1 = Network::from_str("192.168.15.128/28").unwrap();
     let net2 = Network::from_str("10.1.12.0/24").unwrap();
-    let addr = IpAddress::new("10.1.12.2").unwrap();
+    let addr = IpAddress::from_str("10.1.12.2").unwrap();
     assert_eq!(net1.contains(&addr), false);
     assert_eq!(net2.contains(&addr), true);
 }
 
 #[test]
 fn new_mac_test() {
-    let mac1 = MacAddress::new("AC:12:00:1f:ff:22");
-    let mac2 = MacAddress::new("AC:R2:00:1f:ff:22");
-    let mac3 = MacAddress::new("AC:12:00:1f:ff");
-    let mac4 = MacAddress::new("AC12:00:1f:ff:22");
+    let mac1 = MacAddress::from_str("AC:12:00:1f:ff:22");
+    let mac2 = MacAddress::from_str("AC:R2:00:1f:ff:22");
+    let mac3 = MacAddress::from_str("AC:12:00:1f:ff");
+    let mac4 = MacAddress::from_str("AC12:00:1f:ff:22");
     assert_eq!(mac1.is_err(), false);
     assert_eq!(mac2.is_err(), true);
     assert_eq!(mac3.is_err(), true);
@@ -129,9 +133,9 @@ fn new_mac_test() {
 
 #[test]
 fn mac_cmp_test() {
-    let mac1 = MacAddress::new("AB:CD:EF:12:34:56").unwrap();
-    let mac2 = MacAddress::new("AB:CD:EF:12:34:56").unwrap();
-    let mac3 = MacAddress::new("AB:CD:EF:22:34:56").unwrap();
+    let mac1 = MacAddress::from_str("AB:CD:EF:12:34:56").unwrap();
+    let mac2 = MacAddress::from_str("AB:CD:EF:12:34:56").unwrap();
+    let mac3 = MacAddress::from_str("AB:CD:EF:22:34:56").unwrap();
     assert_eq!(mac1 == mac2, true);
     assert_eq!(mac1 == mac3, false);
     assert_eq!(mac1 > mac3, false);
@@ -141,9 +145,9 @@ fn mac_cmp_test() {
 
 #[test]
 fn eui64_test() {
-    let mac1 = MacAddress::new("aa:bb:cc:ee:ff:11").unwrap();
-    let mac2 = MacAddress::new("11:22:33:44:55:66").unwrap();
-    let mac3 = MacAddress::new("12:34:56:78:9a:cd").unwrap();
+    let mac1 = MacAddress::from_str("aa:bb:cc:ee:ff:11").unwrap();
+    let mac2 = MacAddress::from_str("11:22:33:44:55:66").unwrap();
+    let mac3 = MacAddress::from_str("12:34:56:78:9a:cd").unwrap();
 
     assert_eq!(
         IpAddress::eui64(&mac1).to_string(),
@@ -161,7 +165,7 @@ fn eui64_test() {
 
 #[test]
 fn new_if_test() {
-    let inf = Interface::by_name("wlan0");
+    let inf = Interface::from_str("wlan0");
     let inf2 = Interface::by_index(2);
     //   println!("{}",inf.unwrap());
     //   println!("{}", inf2.unwrap());

@@ -56,7 +56,7 @@ impl Debug for InvalidMask {
 
 impl Display for InvalidNetwork {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        write!(f, "An invalid ip address.")
+        write!(f, "An invalid ip network.")
     }
 }
 impl Debug for InvalidNetwork {

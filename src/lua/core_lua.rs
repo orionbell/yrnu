@@ -130,12 +130,30 @@ impl UserData for IpAddress {
 }
 impl LuaSetup for IpAddress {
     fn setup(lua: &mlua::Lua) -> Result<()> {
-        let constructor = lua.create_function(|_, (_, address): (mlua::Value, String)| {
-            match IpAddress::new(address.as_str()) {
-                Ok(addr) => Ok(Some(addr)),
-                Err(_) => Ok(None),
-            }
-        })?;
+        let constructor =
+            lua.create_function(
+                |_, (_, address): (mlua::Value, mlua::Value)| match address {
+                    mlua::Value::Table(table) => {
+                        match IpAddress::new(
+                            &table
+                                .sequence_values::<u8>()
+                                .filter(|n| n.is_ok())
+                                .map(|n| n.unwrap())
+                                .collect::<Vec<u8>>(),
+                        ) {
+                            Ok(mask) => Ok(Some(mask)),
+                            Err(_) => Ok(None),
+                        }
+                    }
+                    mlua::Value::String(address) => {
+                        match IpAddress::from_str(&address.to_string_lossy()) {
+                            Ok(addr) => Ok(Some(addr)),
+                            Err(_) => Ok(None),
+                        }
+                    }
+                    _ => Ok(None),
+                },
+            )?;
         let ipaddress_table = lua.create_table()?;
         let metatable = lua.create_table()?;
         metatable.set("__call", constructor)?;
@@ -189,11 +207,24 @@ impl UserData for Mask {
 impl LuaSetup for Mask {
     fn setup(lua: &mlua::Lua) -> Result<()> {
         let constructor =
-            lua.create_function(|_, (_, mask): (mlua::Value, String)| {
-                match Mask::new(mask.as_str()) {
+            lua.create_function(|_, (_, mask): (mlua::Value, mlua::Value)| match mask {
+                mlua::Value::Table(table) => {
+                    match Mask::new(
+                        &table
+                            .sequence_values::<u8>()
+                            .filter(|n| n.is_ok())
+                            .map(|n| n.unwrap())
+                            .collect::<Vec<u8>>(),
+                    ) {
+                        Ok(mask) => Ok(Some(mask)),
+                        Err(_) => Ok(None),
+                    }
+                }
+                mlua::Value::String(mask) => match Mask::from_str(&mask.to_string_lossy()) {
                     Ok(mask) => Ok(Some(mask)),
                     Err(_) => Ok(None),
-                }
+                },
+                _ => Ok(None),
             })?;
         let mask_table = lua.create_table()?;
         let metatable = lua.create_table()?;
@@ -212,9 +243,22 @@ impl LuaSetup for Mask {
         )?;
         mask_table.set(
             "get_prefix",
-            lua.create_function(|_, mask: String| match Mask::get_prefix(mask.as_str()) {
-                Ok(prefix) => Ok(Some(prefix)),
-                Err(_) => Ok(None),
+            lua.create_function(|_, mask: mlua::Value| match mask {
+                mlua::Value::Table(table) => Ok(Some(Mask::get_prefix(
+                    &table
+                        .sequence_values::<u8>()
+                        .filter(|n| n.is_ok())
+                        .map(|n| n.unwrap())
+                        .collect::<Vec<u8>>(),
+                ))),
+                mlua::Value::String(mask) => {
+                    let octets = IpAddress::octets_from_str(&mask.to_string_lossy());
+                    if let Err(_) = octets {
+                        return Ok(None);
+                    }
+                    Ok(Some(Mask::get_prefix(&octets.unwrap())))
+                }
+                _ => Ok(None),
             })?,
         )?;
         let _ = lua.globals().set("Mask", mask_table);
@@ -235,7 +279,7 @@ impl UserData for Network {
         });
         methods.add_method(
             "contains_str",
-            |_, this, address: String| match IpAddress::new(&address) {
+            |_, this, address: String| match IpAddress::from_str(&address) {
                 Ok(address) => Ok(this.contains(&address)),
                 Err(_) => Ok(false),
             },
@@ -289,7 +333,7 @@ impl UserData for MacAddress {
 impl LuaSetup for MacAddress {
     fn setup(lua: &mlua::Lua) -> Result<()> {
         let constructor = lua.create_function(|_, (_, address): (mlua::Value, String)| {
-            match MacAddress::new(&address) {
+            match MacAddress::from_str(&address) {
                 Ok(address) => Ok(Some(address)),
                 Err(_) => Ok(None),
             }
