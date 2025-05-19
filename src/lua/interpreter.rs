@@ -45,6 +45,33 @@ impl Completer for TokenGroups {
 }
 impl Helper for TokenGroups {}
 
+pub fn print_table(table: &mlua::Table, depth: u8, max_depth: u8) {
+    if depth == max_depth {
+        println!("...");
+        return;
+    }
+    if table.sequence_values::<mlua::Value>().count() != 0
+        && table.sequence_values::<mlua::Value>().count()
+            == table.pairs::<mlua::Value, mlua::Value>().count()
+    {
+        println!("{}{{", "  ".repeat(depth as usize));
+        for entry in table.pairs::<String, mlua::Value>() {
+            if let Ok((key, val)) = entry {
+                if val.is_table() {
+                    print_table(val.as_table().unwrap(), depth - 1, max_depth);
+                } else {
+                    println!(
+                        "{}{} = {},",
+                        "  ".repeat((depth + 1) as usize),
+                        key,
+                        val.to_string().unwrap_or_default()
+                    );
+                }
+            }
+        }
+        println!("{}}}", "  ".repeat(depth as usize));
+    }
+}
 pub fn start_interpreter(lua: &Lua) -> Result<(), Box<dyn Error>> {
     let token_groups = TokenGroups {
         keywords: vec![
@@ -115,19 +142,29 @@ pub fn start_interpreter(lua: &Lua) -> Result<(), Box<dyn Error>> {
 
         match rl.readline(prompt) {
             Ok(line) => {
+                let mut is_val = false;
                 code.push_str(&line);
                 code.push('\n');
                 _ = rl.add_history_entry(line.as_str());
                 match super::run(&lua, &code) {
-                    Ok(_) => {
+                    Ok(value) => {
+                        if !value.is_nil() {
+                            is_val = true;
+                            match value {
+                                mlua::Value::Table(table) => {
+                                    print_table(&table, 0, 3);
+                                }
+                                _ => println!("{}", value.to_string().unwrap_or_default()),
+                            }
+                        }
                         incomplete = false;
-                        code = "".to_string();
+                        code.clear();
                     }
                     Err(e) => match e {
                         mlua::Error::SyntaxError {
                             message,
                             incomplete_input,
-                        } if incomplete_input => {
+                        } if incomplete_input && !is_val => {
                             if message.contains("'=' expected near '<eof>'") {
                                 code_lines = code.split("\n").collect::<Vec<&str>>();
                                 code_lines.pop();
@@ -140,10 +177,14 @@ pub fn start_interpreter(lua: &Lua) -> Result<(), Box<dyn Error>> {
                                 continue;
                             }
                         }
-                        mlua::Error::SyntaxError {
-                            message,
-                            incomplete_input,
-                        } => {
+                        mlua::Error::SyntaxError { message, .. }
+                            if is_val
+                                && (message.contains("unexpected symbol")
+                                    || message.contains("'=' expected near '<eof>'")) =>
+                        {
+                            code.clear()
+                        }
+                        mlua::Error::SyntaxError { message, .. } => {
                             code_lines = code.split("\n").collect::<Vec<&str>>();
                             code_lines.pop();
                             code_lines.pop();
@@ -152,10 +193,7 @@ pub fn start_interpreter(lua: &Lua) -> Result<(), Box<dyn Error>> {
                             eprintln!("{}", message.split(":").last().unwrap_or_default());
                         }
                         _ => {
-                            code_lines = code.split("\n").collect::<Vec<&str>>();
-                            code_lines.pop();
-                            code_lines.pop();
-                            code = code_lines.join("\n");
+                            code.clear();
                             eprintln!("{e}");
                         }
                     },
