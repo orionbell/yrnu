@@ -8,7 +8,7 @@ Yrnu is a `Rust` program that provides simple and easy lua interface for - but n
 > For more permissive licenses please contact me
 
 ### current program stage
-- [x] address module ([wiki](https://orionbell.github.io/yrnu))
+- [x] address module ([wiki](https://orionbell.github.io/yrnu/lua_core.html))
 - [ ] config module - currently in development
 - [ ] packet module
 - [ ] server module
