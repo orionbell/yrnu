@@ -26,9 +26,9 @@ local ip_str = "10.0.1.255"
 if IpAddress.is_valid(ip_str) then
     local ip = IpAddress.new(ip_str)
     print(ip) -- 10.0.1.255 is version 4 broadcast address
-    local oct = ip:get_octats()
-    for i in pairs(oct) do
-        print(oct[i]) -- 10 0 1 255
+    local octs = ip:get_octats()
+    for oct in ipairs(octs) do
+        print(oct) -- 10 0 1 255
     end
 end
 local mask = Mask.from_prefix(22)
