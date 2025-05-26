@@ -4,10 +4,7 @@ import { defineConfig } from "vitepress";
 export default defineConfig({
     title: "yrnu docs",
     description: "Yrnu Documentation",
-<<<<<<< HEAD
     base:"/yrnu/",
-=======
->>>>>>> 0620f25 (New docs static webpage using the github pages + vitepress)
     themeConfig: {
         // https://vitepress.dev/reference/default-theme-config
         nav: [
