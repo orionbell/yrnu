@@ -10,4 +10,3 @@ print(id.kind)
 print(id.version)
 rtr.ospf:set_router_id(id)
 print(rtr:config())
-

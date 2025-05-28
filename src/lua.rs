@@ -2,11 +2,17 @@ pub mod core_lua;
 pub mod interpreter;
 use crate::config::{self, connect, SSHAuthType};
 use crate::core::*;
+use crate::parser::*;
 use crate::port;
-use mlua::{IntoLua, Lua, Result, StdLib};
+use mlua::{Lua, Result, StdLib};
+use quick_xml::events::{BytesDecl, BytesText, Event};
+use quick_xml::writer::Writer;
+use quick_xml::Reader;
+use regex::Regex;
 use std::convert::TryFrom;
 use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::str::FromStr;
 trait LuaSetup {
     fn setup(lua: &mlua::Lua) -> Result<()>;
 }
@@ -30,7 +36,7 @@ pub fn yrnu_setup(lua: &mlua::Lua) -> Result<()> {
                 let future = async {
                     match auth {
                         mlua::Value::Table(auth) => {
-                            if let Ok(host) = IpAddress::new(&host) {
+                            if let Ok(host) = IpAddress::from_str(&host) {
                                 if let Ok(username) = auth.get("username") {
                                     if let Ok(passwd) = auth.get("password") {
                                         Ok(connect(
@@ -112,7 +118,7 @@ pub fn yrnu_setup(lua: &mlua::Lua) -> Result<()> {
                             }
                         }
                         mlua::Nil => {
-                            if let Ok(host) = IpAddress::new(&host) {
+                            if let Ok(host) = IpAddress::from_str(&host) {
                                 Ok(connect(host, port_opt, SSHAuthType::UserInput).await)
                             } else {
                                 Err(mlua::Error::BadArgument {
@@ -149,7 +155,6 @@ pub fn yrnu_setup(lua: &mlua::Lua) -> Result<()> {
                                 output_table = lua.create_table()?;
                                 match config::run(&sess, cmd.to_owned()) {
                                     Ok((stdout, stderr, status)) => {
-                                        output_table.set("success", true)?;
                                         if status == 0 {
                                             metatable = lua.create_table()?;
                                             metatable.set("__tostring", tostring.clone())?;
@@ -157,7 +162,6 @@ pub fn yrnu_setup(lua: &mlua::Lua) -> Result<()> {
                                             output_table.set("success", true)?;
                                             output_table.set("status_code", status)?;
                                             output_table.set("output", stdout.clone())?;
-                                            output_table.set("stdout", stdout)?;
                                             output_table.set("stderr", stderr)?;
                                             output_tables.push(output_table)?;
                                         } else {
@@ -168,7 +172,6 @@ pub fn yrnu_setup(lua: &mlua::Lua) -> Result<()> {
                                             output_table.set("status_code", status)?;
                                             output_table.set("output", stderr.clone())?;
                                             output_table.set("stdout", stdout)?;
-                                            output_table.set("stderr", stderr)?;
                                             output_tables.push(output_table)?;
                                         }
                                     }
@@ -318,9 +321,9 @@ pub fn yrnu_setup(lua: &mlua::Lua) -> Result<()> {
                 .output();
             if output.is_err() {
                 if let Some(e) = output.err() {
-                    return Err(mlua::Error::RuntimeError(
-                        "Failed to run: {cmd}\nError: {e}".to_string(),
-                    ));
+                    return Err(mlua::Error::RuntimeError(format!(
+                        "Failed to run: {cmd}\nError: {e}"
+                    )));
                 } else {
                     return Err(mlua::Error::RuntimeError(
                         "Failed to run: {cmd}".to_string(),
@@ -389,6 +392,249 @@ pub fn yrnu_setup(lua: &mlua::Lua) -> Result<()> {
             }
         })?,
     )?;
+    main_table.set(
+        "regex_cmp",
+        lua.create_function(|_, (regex, str): (String, String)| {
+            let reg = Regex::new(&regex);
+            if reg.is_err() {
+                return Ok(mlua::Nil);
+            }
+            Ok(mlua::Value::Boolean(reg.unwrap().is_match(&str)))
+        })?,
+    )?;
+    main_table.set(
+        "serialize",
+        lua.create_function(
+            |lua, (value, fmt, options): (mlua::Value, String, Option<mlua::Table>)| {
+                let mut spaces = 4;
+                let mut pretty = true;
+                let mut depth = 100;
+                if let Some(options) = &options {
+                    spaces = options.get::<u8>("spaces").unwrap_or(4);
+                    pretty = options.get::<bool>("pretty").unwrap_or(true);
+                    depth = options.get::<u8>("depth").unwrap_or(100);
+                }
+                match fmt.as_str() {
+                    "json" => Ok(mlua::Value::String(lua.create_string(if pretty {
+                        to_json(value, depth).pretty(spaces as u16)
+                    } else {
+                        to_json(value, depth).dump()
+                    })?)),
+                    "yaml" => {
+                        let mut yaml_str = String::new();
+                        let mut emitter = yaml_rust2::emitter::YamlEmitter::new(&mut yaml_str);
+                        emitter.dump(&to_yaml(value, depth)).unwrap();
+                        Ok(mlua::Value::String(lua.create_string(yaml_str)?))
+                    }
+                    "toml" => Ok(mlua::Value::String(lua.create_string(
+                        match if pretty {
+                            toml::to_string_pretty(&to_toml(value, depth))
+                        } else {
+                            toml::to_string(&to_toml(value, depth))
+                        } {
+                            Ok(toml_str) => toml_str,
+                            Err(e) => {
+                                eprintln!("Failed to serialize the giving table.\nError: {e}");
+                                return Ok(mlua::Value::Nil);
+                            }
+                        },
+                    )?)),
+                    "csv" => {
+                        if let mlua::Value::Table(table) = value {
+                            let csv_str = to_csv(
+                                table,
+                                if let Some(opts) = &options {
+                                    opts.get::<Option<mlua::Table>>("headers").unwrap_or(None)
+                                } else {
+                                    None
+                                },
+                            );
+                            if csv_str == "" {
+                                Ok(mlua::Value::Nil)
+                            } else {
+                                Ok(mlua::Value::String(lua.create_string(csv_str.trim())?))
+                            }
+                        } else {
+                            Ok(mlua::Value::Nil)
+                        }
+                    }
+                    "xml" => {
+                        if let mlua::Value::Table(table) = value {
+                            let mut document = vec![];
+                            if table.sequence_values::<mlua::Value>().count()
+                                == table.pairs::<String, mlua::Value>().count()
+                            {
+                                for tag in table.sequence_values::<mlua::Value>() {
+                                    if let Ok(mlua::Value::Table(table)) = tag {
+                                        if let Ok(num) = table.get::<f64>("version") {
+                                            let encoding = table.get::<String>("encoding").unwrap_or_default();
+                                            let standalone = table.get::<String>("standalone").unwrap_or_default();
+                                            document.push(Event::Decl(
+                                                BytesDecl::new(
+                                                    &num.to_string(),
+                                                    if encoding.is_empty() {
+                                                        None
+                                                    } else {
+                                                        Some(&encoding)
+                                                    },
+                                                    if standalone.is_empty() {
+                                                        None
+                                                    } else {
+                                                        Some(&standalone)
+                                                    },
+                                                )
+                                                .into_owned(),
+                                            ));
+                                            if let Ok(doctype) = table.get::<String>("doctype") {
+                                                document.push(Event::DocType(BytesText::new(&doctype).into_owned()));
+                                            }
+                                        } else if let Ok(doctype) = table.get::<String>("doctype") {
+                                            document.push(Event::DocType(BytesText::new(&doctype).into_owned()));
+                                        } else {
+                                            to_xml(table, &mut document, 0, depth, pretty, spaces);
+                                        }
+                                    } else {
+                                        continue;
+                                    }
+                                }
+                            } else {
+                                to_xml(table, &mut document, 0, depth, pretty, spaces);
+                            }
+                            let mut writer = if pretty {
+                                Writer::new_with_indent(
+                                    std::io::Cursor::new(vec![]),
+                                    b' ',
+                                    spaces as usize,
+                                )
+                            } else {
+                                Writer::new(std::io::Cursor::new(vec![]))
+                            };
+                            for event in document {
+                                if let Event::Text(_) = event {
+                                    if let Err(e) = writer.write_indent() {
+                                        eprintln!("Failed to convert to XML.\nError: {e}");
+                                        return Ok(mlua::Value::Nil);
+                                    }
+                                }
+                                if let Err(e) = writer.write_event(event) {
+                                    eprintln!("Failed to convert to XML.\nError: {e}");
+                                    return Ok(mlua::Value::Nil);
+                                }
+                            }
+                            if let Ok(str) = std::str::from_utf8(&writer.into_inner().into_inner())
+                            {
+                                return Ok(mlua::Value::String(lua.create_string(str)?));
+                            }
+                        }
+                        Ok(mlua::Value::Nil)
+                    }
+                    _ => {
+                        eprintln!("Invalid format type.\nCurrently supported formats are json/toml/yaml/xml/csv");
+                        Ok(mlua::Value::Nil)
+                    },
+                }
+            },
+        )?,
+    )?;
+    main_table.set(
+        "deserialize",
+        lua.create_function(|lua, (value, fmt): (String, String)| match fmt.as_str() {
+            "json" => match json::parse(&value) {
+                Ok(json_val) => Ok(from_json(lua, &json_val)),
+                Err(e) => {
+                    eprintln!("Failed to parse JSON string!: {e}");
+                    Ok(mlua::Value::Nil)
+                }
+            },
+            "yaml" => match yaml_rust2::YamlLoader::load_from_str(&value) {
+                Ok(yaml_val) => Ok(from_yaml(lua, &yaml_rust2::yaml::Yaml::Array(yaml_val))),
+                Err(e) => {
+                    eprintln!("Failed to parse YAML string!: {e}");
+                    Ok(mlua::Value::Nil)
+                }
+            },
+            "toml" => match value.trim().parse::<toml::Table>() {
+                Ok(toml_val) => Ok(from_toml(lua, &toml::Value::Table(toml_val))),
+                Err(e) => {
+                    eprintln!("Failed to parse TOML string!: {e}");
+                    Ok(mlua::Value::Nil)
+                }
+            },
+            "xml" => {
+                let mut reader = Reader::from_str(value.trim());
+                let tags = lua.create_table()?;
+                reader.config_mut().trim_text(true);
+                let mut events = vec![];
+                loop {
+                    match reader.read_event() {
+                        Ok(Event::Eof) => break,
+                        Ok(e) => events.push(e),
+                        Err(e) => {
+                            eprintln!("Failed to parse XML.\nError: {e}");
+                            return Ok(mlua::Value::Nil);
+                        }
+                    }
+                }
+                let mut index = 0;
+                while index < events.len() {
+                    if let Event::Decl(decl) = &events[index] {
+                        if let Ok(version) = decl.version() {
+                            let decl_table = lua.create_table()?;
+                            if let Ok(version) = String::from_utf8(version.as_ref().to_vec()) {
+                                decl_table.set("version", version)?;
+                            }
+                            if let Some(Ok(encoding)) = decl.encoding() {
+                                if let Ok(encoding) = String::from_utf8(encoding.as_ref().to_vec())
+                                {
+                                    decl_table.set("encoding", encoding)?;
+                                }
+                            }
+                            if let Some(Ok(standalone)) = decl.standalone() {
+                                if let Ok(standalone) =
+                                    String::from_utf8(standalone.as_ref().to_vec())
+                                {
+                                    decl_table.set("standalone", standalone)?;
+                                }
+                            }
+                            tags.push(decl_table)?;
+                            index += 1;
+                        }
+                    } else if let Event::DocType(doctype) = &events[index] {
+                        let doctype_table = lua.create_table()?;
+                        let doctype = String::from_utf8(doctype.to_vec());
+                        if let Err(e) = doctype {
+                            eprintln!("Faild to parse XML.\nError: {e}");
+                            return Ok(mlua::Value::Nil);
+                        }
+                        doctype_table.set("doctype", doctype.unwrap())?;
+                        tags.push(doctype_table)?;
+                        index += 1;
+                    } else if let Some((table, ind)) = from_xml(
+                        lua,
+                        &events,
+                        index,
+                        if let Event::Empty(_) = events[0] {
+                            true
+                        } else {
+                            false
+                        },
+                    ) {
+                        index = ind + 1;
+                        tags.push(mlua::Value::Table(table))?;
+                    } else {
+                        return Ok(mlua::Value::Nil);
+                    }
+                }
+                Ok(mlua::Value::Table(tags))
+            }
+            "csv" => Ok(if let Some(table) = from_csv(lua, value) {
+                mlua::Value::Table(table)
+            } else {
+                mlua::Value::Nil
+            }),
+            _ => Ok(mlua::Value::Nil),
+        })?,
+    )?;
     lua.globals().set("yrnu", main_table)?;
     Ok(())
 }
@@ -433,7 +679,6 @@ pub fn init() -> Result<Lua> {
     _ = Url::setup(&lua);
     Ok(lua)
 }
-pub fn run(lua: &Lua, code: &str) -> Result<()> {
-    lua.load(code).exec()?;
-    Ok(())
+pub fn run(lua: &Lua, code: &str) -> Result<mlua::Value> {
+    lua.load(code).eval::<mlua::Value>()
 }

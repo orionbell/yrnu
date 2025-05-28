@@ -13,6 +13,7 @@ pub mod config;
 pub mod port;
 pub mod error;
 pub mod lua;
+pub mod parser;
 // internal testing
 #[cfg(test)]
 mod tests {}

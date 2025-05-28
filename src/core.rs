@@ -898,7 +898,6 @@ impl FromStr for Network {
             return Err(InvalidNetwork);
         }
         let mask = Mask::from_prefix(prefix);
-        println!("{prefix}");
         if let Ok(mask) = mask {
             if IpKind::is_netid(network_items[0], &mask) {
                 let netid = IpAddress::from_str(network_items[0]).unwrap();
