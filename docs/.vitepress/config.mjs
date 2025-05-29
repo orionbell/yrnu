@@ -12,13 +12,13 @@ export default defineConfig({
             {
                 text: "Pages",
                 items: [
+                    { text: "Introduction", link: "/introduction" },
                     { text: "Installation", link: "/installation" },
                     {
                         text: "Lua",
                         link: "/lua",
                         items: [
                             { text: "Core Utils", link: "/lua_core" },
-                            { text: "Config Utils", link: "/lua_config" },
                             { text: "Yrnu global", link: "/yrnu_global" },
                             { text: "Creating a Plugin", link: "/lua_plugin" },
                             { text: "Creating a library", link: "/lua_lib" },

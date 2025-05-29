@@ -22,7 +22,6 @@ export default defineConfig({
                         link: "/lua",
                         items: [
                             { text: "Core Utils", link: "/lua_core" },
-                            { text: "Config Utils", link: "/lua_config" },
                             { text: "Yrnu global", link: "/yrnu_global" },
                             { text: "Creating a Plugin", link: "/lua_plugin" },
                             { text: "Creating a library", link: "/lua_lib" },
@@ -37,6 +36,7 @@ export default defineConfig({
 
         socialLinks: [
             { icon: "github", link: "https://github.com/orionbell/yrnu" },
+            { icon: "linkedin", link: "https://linkedin.com/in/yishai-shubeli-977071367" },
         ],
     },
 });

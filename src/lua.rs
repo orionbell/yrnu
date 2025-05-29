@@ -393,7 +393,7 @@ pub fn yrnu_setup(lua: &mlua::Lua) -> Result<()> {
         })?,
     )?;
     main_table.set(
-        "regex_cmp",
+        "match",
         lua.create_function(|_, (regex, str): (String, String)| {
             let reg = Regex::new(&regex);
             if reg.is_err() {
@@ -613,7 +613,7 @@ pub fn yrnu_setup(lua: &mlua::Lua) -> Result<()> {
                         lua,
                         &events,
                         index,
-                        if let Event::Empty(_) = events[0] {
+                        if let Event::Empty(_) = &events[index] {
                             true
                         } else {
                             false

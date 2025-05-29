@@ -260,7 +260,7 @@ pub fn to_xml(
         let children = table
             .get::<Vec<mlua::Value>>("children")
             .unwrap_or_default();
-        let is_self_closed = if children.is_empty() {
+        let is_self_closed = if children.len() == 0 {
             table.get("self_closed").unwrap_or(false)
         } else {
             false
