@@ -15,7 +15,7 @@ local var = "value" -- local variable
 ```lua
 -- In lua float and int are the same and their type referd as number
 bar = 10
-PI = 3.1495
+PI = 3.1415
 ```
 #### Bool
 ```lua

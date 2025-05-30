@@ -2,7 +2,7 @@
 layout: home
 
 hero:
-  name: "Yrnu docs"
+  name: "Yrnu"
   text: "Automate everything using Lua"
   tagline: A Rust tool to configure, monitor and test effortlessly using lua
   actions:
