@@ -1,3 +1,5 @@
+#[allow(unused_assignments)]
+use log::error;
 use mlua::Lua;
 use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
@@ -5,9 +7,10 @@ use rustyline::highlight::Highlighter;
 use rustyline::hint::{Hinter, HistoryHinter};
 use rustyline::history::DefaultHistory;
 use rustyline::validate::Validator;
-use rustyline::{config, Editor, Helper};
+use rustyline::Helper;
 use std::borrow::Cow;
 use std::error::Error;
+use std::path::PathBuf;
 
 struct TokenGroups {
     keywords: Vec<String>,
@@ -72,7 +75,7 @@ pub fn print_table(table: &mlua::Table, depth: u8, max_depth: u8) {
         println!("{}}}", "  ".repeat(depth as usize));
     }
 }
-pub fn start_interpreter(lua: &Lua) -> Result<(), Box<dyn Error>> {
+pub fn start_interpreter(lua: &Lua, root: &PathBuf) -> Result<(), Box<dyn Error>> {
     let token_groups = TokenGroups {
         keywords: vec![
             "local".into(),
@@ -124,15 +127,33 @@ pub fn start_interpreter(lua: &Lua) -> Result<(), Box<dyn Error>> {
     };
     let mut rl = rustyline::Editor::<TokenGroups, DefaultHistory>::new().unwrap();
     rl.set_helper(Some(token_groups));
-    if rl.load_history("history").is_err() {
-        println!("No History to load...");
-    } else {
-        //println!("Loading commands history");
+    if let Err(_e) = rl.load_history(&root.join("history")) {
+        println!("No History file to load, creating history...");
+        if let Err(e) = std::fs::File::create(root.join("history")) {
+            eprintln!("Failed to create history file.\nError: {e}");
+            error!("Failed to create history file.\nError: {e}");
+        } else {
+            if let Err(e) = rl.load_history(&root.join("history")) {
+                eprintln!("Failed to load history file.\nError: {e}");
+                error!("Failed to load history file.\nError: {e}");
+            }
+        }
     }
     let mut incomplete = false;
     let mut code = String::new();
     let mut code_lines;
     let mut prompt;
+    println!(
+        "\x1b[1;34m\n\n\n\t██╗   ██╗██████╗ ███╗   ██╗██╗   ██╗
+\t╚██╗ ██╔╝██╔══██╗████╗  ██║██║   ██║
+\t ╚████╔╝ ██████╔╝██╔██╗ ██║██║   ██║
+\t  ╚██╔╝  ██╔══██╗██║╚██╗██║██║   ██║
+\t   ██║   ██║  ██║██║ ╚████║╚██████╔╝
+\t   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ 
+\x1b[38;5;220m                     \n
+\t\tGithub: orionbell
+\n \x1b[0m"
+    );
     loop {
         prompt = if incomplete {
             "\x1b[1;34m...\x1b[0m"
@@ -152,7 +173,24 @@ pub fn start_interpreter(lua: &Lua) -> Result<(), Box<dyn Error>> {
                             is_val = true;
                             match value {
                                 mlua::Value::Table(table) => {
-                                    print_table(&table, 0, 3);
+                                    if let Ok(_) = table.get::<mlua::Function>("config") {
+                                        let value = mlua::Value::Table(table);
+                                        println!("{}", value.to_string().unwrap_or_default())
+                                    } else if let Some(metatable) = table.metatable() {
+                                        if let Ok(_) = metatable.get::<mlua::Function>("__tostring")
+                                        {
+                                            println!(
+                                                "{}",
+                                                mlua::Value::Table(table)
+                                                    .to_string()
+                                                    .unwrap_or_default()
+                                            )
+                                        } else {
+                                            print_table(&table, 0, 3);
+                                        }
+                                    } else {
+                                        print_table(&table, 0, 3);
+                                    }
                                 }
                                 _ => println!("{}", value.to_string().unwrap_or_default()),
                             }

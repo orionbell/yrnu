@@ -403,12 +403,7 @@ impl IpKind {
                 ];
             } else if (*max_hosts as u64) < Mask::MAX_CLASS_A_ADDR {
                 let preportion = (max_hosts) / Mask::MAX_CLASS_B_ADDR;
-                addr = vec![
-                    octats[0],
-                    (octats[1] as u32 + preportion) as u8,
-                    255,
-                    255,
-                ];
+                addr = vec![octats[0], (octats[1] as u32 + preportion) as u8, 255, 255];
             } else {
                 let preportion = ((*max_hosts) as u64) / Mask::MAX_CLASS_A_ADDR;
                 addr = vec![(octats[0] as u64 + preportion) as u8, 255, 255, 255];
@@ -676,10 +671,7 @@ impl Display for IpAddress {
                     &self
                         .address
                         .chunks(2)
-                        .map(|chunk| (format!(
-                            "{:x}",
-                            (chunk[1] as u16) | ((chunk[0] as u16) << 8)
-                        )))
+                        .map(|chunk| format!("{:x}", (chunk[1] as u16) | ((chunk[0] as u16) << 8)))
                         .collect::<Vec<String>>()
                         .join(":")
                 )
