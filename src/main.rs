@@ -325,7 +325,7 @@ impl Yrnu {
             action => {
                 let arg = match action {
                     "store-table" => {
-                        if let Ok(delim) = arg_options.get::<String>("delimeter") {
+                        if let Ok(delim) = arg_options.get::<String>("delimiter") {
                             if delim.len() == 1 && delim != " " {
                                 arg.value_delimiter(delim.chars().next())
                             } else {

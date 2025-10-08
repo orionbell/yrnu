@@ -297,7 +297,7 @@ impl LuaSetup for Network {
             })?;
         let network_table = lua.create_table()?;
         let metatable = lua.create_table()?;
-        metatable.set("_call", constructor)?;
+        metatable.set("__call", constructor)?;
         network_table.set_metatable(Some(metatable));
         network_table.set(
             "from",

@@ -1,2 +1,2 @@
 #!/bin/env bash
-sudo rm -rf /usr/bin/yrnu
+sudo rm /usr/bin/yrnu

@@ -816,22 +816,10 @@ impl Network {
     /// Creates a new ipv4 Network instance from giving net id and subnet mask
     pub fn new(id: IpAddress, mask: Mask) -> Result<Network, InvalidNetwork> {
         if IpKind::is_netid(id.address().as_str(), &mask) {
-            let octets = id.octets();
-            let hosts = mask.num_of_hosts() + 1;
             if IpVersion::is_v4(&id.address().as_str()) {
                 return Ok(Network {
+                    broadcast: IpKind::get_broadcast(id.address().as_str(), &mask).unwrap(),
                     mask,
-                    broadcast: IpAddress::from_str(
-                        format!(
-                            "{}.{}.{}.{}",
-                            octets[0],
-                            octets[1],
-                            octets[2],
-                            octets[3] as u32 + hosts - 2
-                        )
-                        .as_str(),
-                    )
-                    .unwrap(),
                     id,
                 });
             }
