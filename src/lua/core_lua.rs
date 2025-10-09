@@ -1,6 +1,7 @@
 use super::LuaSetup;
 use crate::core::*;
 use mlua::{MetaMethod, Result, UserData, UserDataMethods};
+use std::io::{BufRead, Read};
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -332,12 +333,13 @@ impl UserData for MacAddress {
 }
 impl LuaSetup for MacAddress {
     fn setup(lua: &mlua::Lua) -> Result<()> {
-        let constructor = lua.create_function(|_, (_, address): (mlua::Value, String)| {
-            match MacAddress::from_str(&address) {
-                Ok(address) => Ok(Some(address)),
-                Err(_) => Ok(None),
-            }
-        })?;
+        let constructor =
+            lua.create_function(
+                |_, (_, address): (mlua::Value, String)| match MacAddress::from_str(&address) {
+                    Ok(address) => Ok(Some(address)),
+                    Err(_) => Ok(None),
+                },
+            )?;
         let macaddress_table = lua.create_table()?;
         let metatable_table = lua.create_table()?;
         metatable_table.set("__call", constructor)?;
@@ -434,6 +436,28 @@ impl UserData for Path {
                 }
             }
             Ok(paths)
+        });
+        fields.add_field_method_get("content_lines", |_, this| {
+            match std::fs::File::open(&this.0) {
+                Ok(file) => {
+                    let mut lines = vec![];
+                    for line in std::io::BufReader::new(file).lines().filter_map(|l| l.ok()) {
+                        lines.push(line);
+                    }
+                    Ok(lines)
+                }
+                Err(e) => Err(mlua::Error::external(e)),
+            }
+        });
+        fields.add_field_method_get("content", |_, this| match std::fs::File::open(&this.0) {
+            Ok(mut file) => {
+                let mut content = String::new();
+                match file.read_to_string(&mut content) {
+                    Ok(_) => Ok(content),
+                    Err(e) => Err(mlua::Error::external(e)),
+                }
+            }
+            Err(e) => Err(mlua::Error::external(e)),
         });
     }
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
