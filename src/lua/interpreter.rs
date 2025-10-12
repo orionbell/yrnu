@@ -1,13 +1,13 @@
 #[allow(unused_assignments)]
 use log::error;
 use mlua::Lua;
+use rustyline::Helper;
 use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::{Hinter, HistoryHinter};
 use rustyline::history::DefaultHistory;
 use rustyline::validate::Validator;
-use rustyline::Helper;
 use std::borrow::Cow;
 use std::error::Error;
 use std::path::PathBuf;
@@ -242,6 +242,6 @@ pub fn start_interpreter(lua: &Lua, root: &PathBuf) -> Result<(), Box<dyn Error>
             Err(_) => continue,
         }
     }
-    _ = rl.save_history("history");
+    _ = rl.save_history(&root.join("history"));
     Ok(())
 }
