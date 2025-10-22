@@ -1,7 +1,9 @@
 use super::LuaSetup;
 use crate::core::*;
-use mlua::{MetaMethod, Result, UserData, UserDataMethods};
-use std::io::{BufRead, Read};
+use mlua::{IntoLua, MetaMethod, Result, UserData, UserDataMethods};
+use regex::Regex;
+use std::fs::{File, rename};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -389,7 +391,152 @@ impl LuaSetup for Interface {
         Ok(())
     }
 }
-
+// Helper function to write to a file
+fn append(
+    path: &PathBuf,
+    line_num: Option<usize>,
+    line_pattren: Option<String>,
+    content: &str,
+    replace: bool,
+    before: bool,
+    after: bool,
+    index: Option<i64>,
+    end_ind: Option<i64>,
+) -> mlua::Result<()> {
+    let reg = if let Some(pattren) = &line_pattren {
+        match Regex::new(&pattren) {
+            Ok(re) => Some(re),
+            Err(e) => {
+                eprintln!("Invalid Regex pattren: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let file = match File::open(path) {
+        Ok(file) => file,
+        Err(e) => return Err(mlua::Error::external(e)),
+    };
+    let lines = BufReader::new(file).lines();
+    let mut tmp_file = match File::create(path.with_extension("tmp")) {
+        Ok(file) => file,
+        Err(e) => return Err(mlua::Error::external(e)),
+    };
+    let mut lines_num = 0;
+    for (i, line) in lines.enumerate() {
+        match line {
+            Ok(line) => {
+                if (reg.is_some() && reg.as_ref().unwrap().is_match(&line))
+                    || line_num == Some(i + 1)
+                {
+                    if replace && line_pattren.is_none() {
+                        if let Err(e) = writeln!(tmp_file, "{content}") {
+                            return Err(mlua::Error::external(e));
+                        }
+                    } else if before {
+                        if let Err(e) = writeln!(tmp_file, "{content}") {
+                            return Err(mlua::Error::external(e));
+                        }
+                        if let Err(e) = writeln!(tmp_file, "{line}") {
+                            return Err(mlua::Error::external(e));
+                        }
+                    } else if after {
+                        if let Err(e) = writeln!(tmp_file, "{line}") {
+                            return Err(mlua::Error::external(e));
+                        }
+                        if let Err(e) = writeln!(tmp_file, "{content}") {
+                            return Err(mlua::Error::external(e));
+                        }
+                    } else {
+                        if let Some(index) = index {
+                            let index = if index < 0 {
+                                if (line.len() as i64 + index) < 0 {
+                                    0
+                                } else {
+                                    (line.len() as i64 + index) as usize
+                                }
+                            } else {
+                                index as usize
+                            };
+                            let end_ind = if end_ind.is_none() {
+                                index
+                            } else if end_ind.unwrap() < 0 {
+                                let end_ind = end_ind.unwrap();
+                                if (line.len() as i64 + end_ind) < 0 {
+                                    0
+                                } else {
+                                    (line.len() as i64 + end_ind) as usize
+                                }
+                            } else {
+                                end_ind.unwrap() as usize
+                            };
+                            if replace {
+                                if let Err(e) = writeln!(
+                                    tmp_file,
+                                    "{}{content}{}",
+                                    &line[..index],
+                                    if line.len() > content.len() {
+                                        &line[end_ind..]
+                                    } else {
+                                        ""
+                                    },
+                                ) {
+                                    return Err(mlua::Error::external(e));
+                                }
+                            } else {
+                                if let Err(e) = writeln!(
+                                    tmp_file,
+                                    "{}{content}{}",
+                                    &line[..index],
+                                    &line[index..]
+                                ) {
+                                    return Err(mlua::Error::external(e));
+                                }
+                            }
+                        } else {
+                            if replace {
+                                if let Err(e) = writeln!(
+                                    tmp_file,
+                                    "{}{content}",
+                                    if line.len() > content.len() {
+                                        &line[..line.len() - content.len()]
+                                    } else {
+                                        ""
+                                    }
+                                ) {
+                                    return Err(mlua::Error::external(e));
+                                }
+                            } else {
+                                if let Err(e) = writeln!(tmp_file, "{line}{content}") {
+                                    return Err(mlua::Error::external(e));
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    if let Err(e) = writeln!(tmp_file, "{line}") {
+                        return Err(mlua::Error::external(e));
+                    }
+                }
+            }
+            Err(e) => return Err(mlua::Error::external(e)),
+        }
+        lines_num += 1;
+    }
+    if (line_num.is_some() && line_num.unwrap() > lines_num)
+        || lines_num == 0
+        || (line_num.is_none() && line_pattren.is_none())
+    {
+        if let Err(e) = writeln!(tmp_file, "{content}") {
+            return Err(mlua::Error::external(e));
+        }
+    }
+    if let Err(e) = rename(path.with_extension("tmp"), path) {
+        return Err(mlua::Error::external(e));
+    }
+    Ok(())
+}
 impl UserData for Path {
     fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
         fields.add_field_method_get("exists", |_, this| Ok(this.0.exists()));
@@ -426,43 +573,139 @@ impl UserData for Path {
                 Ok(None)
             }
         });
-        fields.add_field_method_get("children", |_, this| {
-            let mut paths: Vec<Path> = vec![];
+        fields.add_field_method_get("children", |lua, this| {
             if let Ok(entries) = this.0.read_dir() {
+                let mut paths: Vec<Path> = vec![];
                 for entry in entries {
                     if let Ok(entry) = entry {
                         paths.push(Path(entry.path()))
                     }
                 }
+                paths.into_lua(lua)
+            } else {
+                Ok(mlua::Value::Nil)
             }
-            Ok(paths)
         });
-        fields.add_field_method_get("content_lines", |_, this| {
-            match std::fs::File::open(&this.0) {
-                Ok(file) => {
-                    let mut lines = vec![];
-                    for line in std::io::BufReader::new(file).lines().filter_map(|l| l.ok()) {
-                        lines.push(line);
+        fields.add_field_method_get("content_lines", |lua, this| {
+            if this.0.is_dir() {
+                Ok(mlua::Value::Nil)
+            } else {
+                match std::fs::File::open(&this.0) {
+                    Ok(file) => {
+                        let mut lines = vec![];
+                        for line in std::io::BufReader::new(file).lines().filter_map(|l| l.ok()) {
+                            lines.push(line);
+                        }
+                        lines.into_lua(lua)
                     }
-                    Ok(lines)
-                }
-                Err(e) => Err(mlua::Error::external(e)),
-            }
-        });
-        fields.add_field_method_get("content", |_, this| match std::fs::File::open(&this.0) {
-            Ok(mut file) => {
-                let mut content = String::new();
-                match file.read_to_string(&mut content) {
-                    Ok(_) => Ok(content),
                     Err(e) => Err(mlua::Error::external(e)),
                 }
             }
-            Err(e) => Err(mlua::Error::external(e)),
+        });
+        fields.add_field_method_get("content", |lua, this| {
+            if this.0.is_dir() {
+                Ok(mlua::Value::Nil)
+            } else {
+                match std::fs::File::open(&this.0) {
+                    Ok(mut file) => {
+                        let mut content = String::new();
+                        match file.read_to_string(&mut content) {
+                            Ok(_) => content.into_lua(lua),
+                            Err(e) => Err(mlua::Error::external(e)),
+                        }
+                    }
+                    Err(e) => Err(mlua::Error::external(e)),
+                }
+            }
+        });
+        fields.add_field_method_set("content", |_, this, content: String| {
+            append(
+                &this.0, None, None, &content, false, false, false, None, None,
+            )
         });
     }
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method_mut("push", |_, this, entry: String| Ok(this.0.push(entry)));
         methods.add_method("join", |_, this, entry: String| Ok(this.0.join(entry)));
+        methods.add_method("create", |_, this, entry: Option<String>| {
+            if this.0.is_dir() && entry.is_some() {
+                let entry_path = Path(this.0.join(entry.unwrap()));
+                match std::fs::File::create(&entry_path.0) {
+                    Ok(_) => Ok(Some(entry_path)),
+                    Err(e) => Err(mlua::Error::external(e)),
+                }
+            } else if this.0.is_file() {
+                match std::fs::File::create(&this.0) {
+                    Ok(_) => Ok(Some(this.to_owned())),
+                    Err(e) => Err(mlua::Error::external(e)),
+                }
+            } else {
+                Ok(None)
+            }
+        });
+        methods.add_method("overwrite", |_, this, content: String| {
+            let mut file = match File::create(&this.0) {
+                Ok(file) => file,
+                Err(e) => return Err(mlua::Error::external(e)),
+            };
+            let content = format!("{content}\n");
+            if let Err(e) = file.write_all(content.as_bytes()) {
+                return Err(mlua::Error::external(e));
+            }
+            Ok(())
+        });
+        methods.add_method(
+            "append",
+            |_,
+             this,
+             (content, line_pat, replace, before, after, index, end_ind): (
+                String,
+                mlua::Value,
+                mlua::Value,
+                mlua::Value,
+                mlua::Value,
+                mlua::Value,
+                mlua::Value,
+            )| {
+                if this.0.is_dir() {
+                    Ok(mlua::Value::Nil)
+                } else {
+                    if let mlua::Value::String(reg_pat) = line_pat {
+                        match append(
+                            &this.0,
+                            None,
+                            Some(reg_pat.to_string_lossy()),
+                            &content,
+                            replace.as_boolean().unwrap_or(false),
+                            before.as_boolean().unwrap_or(false),
+                            after.as_boolean().unwrap_or(false),
+                            index.as_i64(),
+                            end_ind.as_i64(),
+                        ) {
+                            Ok(_) => Ok(mlua::Value::Boolean(true)),
+                            Err(e) => Err(e),
+                        }
+                    } else if let Some(line_num) = line_pat.as_usize() {
+                        match append(
+                            &this.0,
+                            Some(line_num),
+                            None,
+                            &content,
+                            replace.as_boolean().unwrap_or(false),
+                            before.as_boolean().unwrap_or(false),
+                            after.as_boolean().unwrap_or(false),
+                            index.as_i64(),
+                            end_ind.as_i64(),
+                        ) {
+                            Ok(_) => Ok(mlua::Value::Boolean(true)),
+                            Err(e) => Err(e),
+                        }
+                    } else {
+                        Ok(mlua::Value::Nil)
+                    }
+                }
+            },
+        );
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| Ok(this.to_string()));
     }
 }
