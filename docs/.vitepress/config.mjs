@@ -20,8 +20,9 @@ export default defineConfig({
                         items: [
                             { text: "Core Utils", link: "/lua_core" },
                             { text: "Yrnu global", link: "/yrnu_global" },
-                            { text: "Creating a Plugin", link: "/lua_plugin" },
-                            { text: "Creating a library", link: "/lua_lib" },
+                            { text: "Creating plugins", link: "/lua_plugin" },
+                            { text: "Using a plugin", link: "/plugin_usage" },
+                            { text: "libraries", link: "/lua_lib" },
                         ],
                     },
                     { text: "Cli Usage", link: "/cli_usage" },

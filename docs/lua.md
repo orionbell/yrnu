@@ -13,7 +13,7 @@ local var = "value" -- local variable
 
 #### Number
 ```lua
--- In lua float and int are the same and their type referd as number
+-- In lua float and int are the same type and their type referd as number
 bar = 10
 PI = 3.1415
 ```
@@ -24,8 +24,9 @@ zas = false
 ```
 #### String
 ```lua
-var = 'Hi mom'       -- immutable
-foo = "Hello World"  -- mutable
+-- Lua strings are immutable
+var = 'Hi mom'       
+foo = "Hello World"  
 dor = [[             
     multi line
     strings

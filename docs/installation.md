@@ -24,7 +24,7 @@ git clone -depth 1 https://github.com/orionbell/yrnu.git
 cd yrnu
 
 ```
-3. Comment the first two lines in the `script.sh` file
+3. Comment the first two lines in the `install.sh` file
 ```sh
 # printf "Downloading..."
 # (git clone --depth 1 https://github.com/orionbell/yrnu.git -q && printf "done!\n") || (printf "failed!\n" && exit 1)

@@ -23,7 +23,7 @@ Checks if a giving address is a valid Ipv4 address
 Arguments:
 - address - `string`
 
-Returns: `bool` - `true` if valid Ipv4 `else` otherwise
+Returns: `bool` - `true` if valid IPv4 `false` otherwise
 
 ##### Examples
 ```lua
@@ -32,12 +32,12 @@ if IpVersion.is_v4("192.168.1.1") then
 end
 ```
 #### is_v6
-Checks if a giving address is a valid Ipv6 address
+Checks if a giving address is a valid IPv6 address
 
 Arguments:
 - address - `string`
 
-Returns: `bool` - `true` if valid Ipv6 `else` otherwise
+Returns: `bool` - `true` if valid IPv6 `false` otherwise
 
 ##### Examples
 ```lua
@@ -598,8 +598,9 @@ The `Path` global present a file system path to a file or directory
 - is_relative - `bool`
 - is_symlink - `bool`
 - parent - `Path`
-- children - `table` - array of `Path`
-
+- children - `table` - array of `Path`s
+- content - `string`
+- content_lines - `table` - array of `string`s
 ---
 ### Methods
 #### `push`
