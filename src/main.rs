@@ -1,11 +1,11 @@
 use clap::builder;
-use clap::{command, value_parser, Arg, ArgAction, ArgGroup, ArgMatches, Command};
+use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command, command, value_parser};
 use git2::FetchOptions;
-use log::{error, info, warn, LevelFilter};
+use log::{LevelFilter, error, info, warn};
 use mlua::Lua;
+use quick_xml::Reader;
 use quick_xml::events::{BytesDecl, BytesText, Event};
 use quick_xml::writer::Writer;
-use quick_xml::Reader;
 use regex::Regex;
 use std::convert::TryFrom;
 use std::default::Default;
@@ -14,7 +14,7 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
 use which::which;
-use yrnu::config::{self, connect, SSHAuthType};
+use yrnu::config::{self, SSHAuthType, connect};
 use yrnu::core::{Interface, IpAddress, MacAddress, Mask, Network, Path, Url};
 use yrnu::lua;
 use yrnu::lua::interpreter;
@@ -386,10 +386,10 @@ impl Yrnu {
         // Returns the defined Clap
         // Argument and Lua function if defined
         let start_config = table.get("preconfig").unwrap_or("".to_string()); // Text to append before
-                                                                             // the configuration string
+        // the configuration string
         let end_config = table.get("postconfig").unwrap_or("".to_string()); // Text to append after
-                                                                            // the configuration string
-                                                                            // The global Clap definition
+        // the configuration string
+        // The global Clap definition
         let mut subcmd = Command::new(name).arg(
             Arg::new("wizard")
                 .short('w')
@@ -441,7 +441,7 @@ impl Yrnu {
                     mlua::Value::Table(value) => value, // If the argument value is a table, return it.
                     mlua::Value::String(value) => {
                         let table = self.lua.create_table()?; // Create an argument table
-                                                              // If the argument value is a string check
+                        // If the argument value is a string check
                         if value.to_str().unwrap().len() == 1 {
                             // If the string length is 1 use
                             // it as a short Clap argument
@@ -452,12 +452,22 @@ impl Yrnu {
                         }
                         table // Return the newly created argument table
                     }
+                    mlua::Value::Boolean(required) => {
+                        let table = self.lua.create_table()?;
+                        table.set("required", required)?;
+                        table
+                    }
+                    mlua::Value::Function(update) => {
+                        let table = self.lua.create_table()?;
+                        table.set("update", update)?;
+                        table
+                    }
                     _ => {
                         // For other types just skip this argument and log an error
                         error!(
-                        "Faild to load argument {}!, value should be either a table, string or nil",
-                        arg_name
-                    );
+                            "Faild to load argument {}!, value should be either a table, string or nil",
+                            arg_name
+                        );
                         continue;
                     }
                 };
@@ -734,9 +744,10 @@ impl Yrnu {
                                     )?)
                                     .eval::<mlua::Table>()
                                 {
-                                    Ok(global_table) => {
-                                            globals.push((global_name, global_table))},
-                                    Err(e) => eprintln!("Failed to evaluate {global_name}.lua as a vaild lua table.\nError: {e}"),
+                                    Ok(global_table) => globals.push((global_name, global_table)),
+                                    Err(e) => eprintln!(
+                                        "Failed to evaluate {global_name}.lua as a vaild lua table.\nError: {e}"
+                                    ),
                                 }
                             } else {
                                 eprintln!("{global_name}.lua do not exists.\nSkipping...");
@@ -777,9 +788,17 @@ impl Yrnu {
                                                     .eval::<mlua::Table>()
                                                 {
                                                     Ok(global_table) => {
-                                                            let name = path.file_stem().unwrap_or_default().display().to_string();
-                                                            globals.push((name, global_table))},
-                                                    Err(e) => eprintln!("Failed to evaluate {}.lua as a vaild lua table.\nError: {e}", entry.file_name().display()),
+                                                        let name = path
+                                                            .file_stem()
+                                                            .unwrap_or_default()
+                                                            .display()
+                                                            .to_string();
+                                                        globals.push((name, global_table))
+                                                    }
+                                                    Err(e) => eprintln!(
+                                                        "Failed to evaluate {}.lua as a vaild lua table.\nError: {e}",
+                                                        entry.file_name().display()
+                                                    ),
                                                 }
                                             }
                                         }
@@ -804,14 +823,22 @@ impl Yrnu {
                                     // Adding the global to the globals list if the global file can be evaluated as
                                     // Lua table
                                     match self
-                                    .lua
-                                    .load(std::fs::read_to_string(entry.path())?)
-                                    .eval::<mlua::Table>()
+                                        .lua
+                                        .load(std::fs::read_to_string(entry.path())?)
+                                        .eval::<mlua::Table>()
                                     {
                                         Ok(global_table) => {
-                                                let name = path.file_stem().unwrap_or_default().display().to_string();
-                                                globals.push((name, global_table))},
-                                        Err(e) => eprintln!("Failed to evaluate {}.lua as a vaild lua table.\nError: {e}", entry.file_name().display()),
+                                            let name = path
+                                                .file_stem()
+                                                .unwrap_or_default()
+                                                .display()
+                                                .to_string();
+                                            globals.push((name, global_table))
+                                        }
+                                        Err(e) => eprintln!(
+                                            "Failed to evaluate {}.lua as a vaild lua table.\nError: {e}",
+                                            entry.file_name().display()
+                                        ),
                                     }
                                 }
                             }
@@ -819,7 +846,9 @@ impl Yrnu {
                         Ok((globals, Some(to_string)))
                     }
                 } else {
-                    eprintln!("Found init.lua file in {plugin} plugin but couldn't evaluate it as a table\nSkiping...");
+                    eprintln!(
+                        "Found init.lua file in {plugin} plugin but couldn't evaluate it as a table\nSkiping..."
+                    );
                     Ok((vec![], None))
                 }
             } else {
@@ -939,7 +968,9 @@ impl Yrnu {
                 install_cmd
             };
             if install_cmd.is_none() {
-                eprintln!("Error: Couldn't determined your install command (e.g pacman -S in Arch based distros), please specify it manualy in your init.lua file.\n***install_cmd = <INSTALL CMD>***");
+                eprintln!(
+                    "Error: Couldn't determined your install command (e.g pacman -S in Arch based distros), please specify it manualy in your init.lua file.\n***install_cmd = <INSTALL CMD>***"
+                );
                 return Err(mlua::Error::external(
                     "Required argument \"install_cmd\" is missing.",
                 ));
@@ -1364,8 +1395,21 @@ Key features include configuring network settings, sending custom traffic, and d
                         }
                         table
                     }
+                    mlua::Value::Boolean(required) => {
+                        let table = self.lua.create_table()?;
+                        table.set("required", required)?;
+                        table
+                    }
+                    mlua::Value::Function(update) => {
+                        let table = self.lua.create_table()?;
+                        table.set("update", update)?;
+                        table
+                    }
                     _ => {
-                        error!("Faild to load argument {}!, value should be either a table or a string", arg_name);
+                        error!(
+                            "Faild to load argument {}!, value should be either a table or a string",
+                            arg_name
+                        );
                         continue;
                     }
                 };
